@@ -1,13 +1,13 @@
-"""Authentication and user lifecycle business services."""
-
 import logging
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.core.errors import ConflictError
-from app.core.security import hash_password
+from app.core.errors import ConflictError, ForbiddenError, UnauthorizedError
+from app.core.security import hash_password, normalize_email, verify_password
 from app.models.user import Profile, User
 from app.schemas.auth import UserRegisterRequest
 
@@ -83,3 +83,52 @@ async def register_user(session: AsyncSession, payload: UserRegisterRequest) -> 
         extra={"user_id": str(user.id), "role": user.role},
     )
     return user
+
+
+async def authenticate_user(session: AsyncSession, email: str, password: str) -> User:
+    """Authenticate a user by email and password.
+
+    Normalizes email, checks active status, and verifies password using Argon2id.
+    Uses generic rejection messages to mitigate user enumeration.
+    Never logs passwords or tokens.
+    """
+    normalized = normalize_email(email)
+    stmt = (
+        select(User).options(selectinload(User.profile)).where(User.email_normalized == normalized)
+    )
+    user = await session.scalar(stmt)
+
+    if user is None:
+        logger.warning(
+            "Authentication failed: user not found", extra={"email_attempted": normalized}
+        )
+        raise UnauthorizedError(
+            message="Invalid email or password.",
+            code="INVALID_CREDENTIALS",
+        )
+
+    if not verify_password(password, user.password_hash):
+        logger.warning("Authentication failed: invalid password", extra={"user_id": str(user.id)})
+        raise UnauthorizedError(
+            message="Invalid email or password.",
+            code="INVALID_CREDENTIALS",
+        )
+
+    if not user.is_active:
+        logger.warning("Authentication rejected: inactive account", extra={"user_id": str(user.id)})
+        raise ForbiddenError(
+            message="User account is inactive.",
+            code="ACCOUNT_INACTIVE",
+        )
+
+    logger.info(
+        "User authenticated successfully",
+        extra={"user_id": str(user.id), "role": user.role},
+    )
+    return user
+
+
+async def get_user_by_id(session: AsyncSession, user_id: uuid.UUID) -> User | None:
+    """Retrieve a user by primary key with profile eager loaded."""
+    stmt = select(User).options(selectinload(User.profile)).where(User.id == user_id)
+    return await session.scalar(stmt)

@@ -104,3 +104,35 @@ class UserResponse(BaseModel):
     created_at: datetime = Field(..., description="Account creation timestamp (UTC)")
     updated_at: datetime = Field(..., description="Account last update timestamp (UTC)")
     profile: ProfileResponse | None = Field(default=None, description="Associated user profile")
+
+
+class LoginRequest(BaseModel):
+    """Payload schema for user authentication."""
+
+    email: EmailStr = Field(
+        ...,
+        description="User registered email address",
+        examples=["patient@example.com"],
+    )
+    password: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        description="Account password",
+        examples=["SecurePassw0rd!"],
+    )
+
+    @field_validator("email", mode="after")
+    @classmethod
+    def normalize_email_input(cls, v: EmailStr) -> str:
+        """Ensure email is consistently normalized to lowercase with whitespace stripped."""
+        return normalize_email(str(v))
+
+
+class TokenResponse(BaseModel):
+    """JWT bearer token and authenticated user details."""
+
+    access_token: str = Field(..., description="JWT bearer access token")
+    token_type: str = Field(default="bearer", description="Token type specification")
+    expires_in: int = Field(..., description="Token lifespan in seconds")
+    user: UserResponse = Field(..., description="Authenticated user account details")

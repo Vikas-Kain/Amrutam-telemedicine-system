@@ -12,10 +12,10 @@ Status definitions:
 |---|---|---|
 | Passwords hashed with maintained algorithm (Argon2id) | Implemented | Implemented in `app/core/security.py` using `argon2-cffi` (RFC 9106 / OWASP recommended parameters); verified in `tests/test_auth.py` |
 | Login and MFA authentication routes are rate-limited | Not started | Will be implemented in Milestone 20 |
-| Short-lived JWT access tokens with strict signature validation | Not started | Will be implemented in Milestone 08 |
-| TOTP multi-factor authentication (MFA) for doctor/admin roles | Not started | Will be implemented in Milestone 08 |
-| MFA secrets are encrypted at rest with environment key and never logged | Not started | Will be implemented in Milestone 08 |
-| Role-based access control (RBAC) enforced server-side | Not started | Will be implemented in Milestone 08 |
+| Short-lived JWT access tokens with strict signature validation | Implemented | Implemented in `app/core/security.py` using PyJWT with HS256, strict claims validation, expiration checks, and token-algorithm enforcement; verified in `tests/test_auth.py` |
+| TOTP multi-factor authentication (MFA) for doctor/admin roles | Not started | Will be implemented in Milestone 20 |
+| MFA secrets are encrypted at rest with environment key and never logged | Not started | Will be implemented in Milestone 20 |
+| Role-based access control (RBAC) enforced server-side | Implemented | Implemented in `app/api/deps.py` via `require_roles`, `require_doctor`, `require_admin`; verified in `tests/test_auth.py` |
 | Resource ownership and doctor assignment checked on sensitive ops (no IDOR) | Not started | Will be implemented in Milestones 09–15 |
 | Cross-patient data isolation (patients cannot access other patients' records) | Not started | Will be implemented in Milestones 13–15 |
 | Atomic, concurrency-safe appointment booking (`SELECT FOR UPDATE` + constraints) | Not started | Will be implemented in Milestone 12 |

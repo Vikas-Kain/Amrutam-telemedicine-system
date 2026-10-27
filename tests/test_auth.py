@@ -1,17 +1,27 @@
-"""Tests for user registration, Argon2 password hashing, and response redaction."""
+"""Tests for user registration, Argon2 password hashing, JWT authentication, and authorization."""
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
+import jwt
 import pytest
-from app.core.errors import ConflictError
-from app.core.security import hash_password, normalize_email, verify_password
+from app.api.deps import require_doctor, require_roles
+from app.core.config import get_settings
+from app.core.errors import ConflictError, ForbiddenError, UnauthorizedError
+from app.core.security import (
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    normalize_email,
+    verify_password,
+)
 from app.db.session import get_db_session
 from app.main import create_app
 from app.models.user import Profile, User
 from app.schemas.auth import UserRegisterRequest, UserResponse
-from app.services.auth_service import register_user
+from app.services.auth_service import authenticate_user, register_user
+from fastapi import APIRouter, Depends
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
@@ -413,8 +423,8 @@ def test_api_register_invalid_payload_returns_422():
     reason="Live PostgreSQL instance not reachable; run via Docker Compose or in CI",
 )
 @pytest.mark.asyncio
-async def test_live_postgres_registration_and_uniqueness_constraint():
-    """Verify registration, foreign keys, and unique constraint enforcement on live PostgreSQL."""
+async def test_live_postgres_registration_authentication_and_uniqueness_flow():
+    """Verify live PostgreSQL registration, password verification, and uniqueness constraint."""
     unique_suffix = uuid.uuid4().hex[:8]
     test_email = f"test_patient_{unique_suffix}@example.com"
     pwd = "LivePostgresPassword123!"
@@ -433,9 +443,21 @@ async def test_live_postgres_registration_and_uniqueness_constraint():
         assert user.id is not None
         assert user.profile.id is not None
         assert user.profile.user_id == user.id
+
+        # 2. Authenticate user against live database
+        auth_user = await authenticate_user(session, test_email, pwd)
+        assert auth_user.id == user.id
+        assert auth_user.role == "patient"
+        assert auth_user.profile.full_name == "Live Test Patient"
+
+        # 3. Create token and decode
+        token = create_access_token(subject=auth_user.id, role=auth_user.role)
+        decoded = decode_access_token(token)
+        assert decoded["sub"] == str(user.id)
+        assert decoded["role"] == "patient"
         break
 
-    # 2. Attempt registration with duplicate email (different casing)
+    # 4. Attempt registration with duplicate email (different casing)
     duplicate_payload = UserRegisterRequest(
         email=test_email.upper(),  # Should normalize to same email
         password="DifferentPassword456!",
@@ -448,3 +470,595 @@ async def test_live_postgres_registration_and_uniqueness_constraint():
         assert exc_info.value.status_code == 409
         assert exc_info.value.code == "EMAIL_ALREADY_EXISTS"
         break
+
+
+# ==============================================================================
+# 6. JWT Token Creation, Claims & Strict Validation Tests
+# ==============================================================================
+
+
+def test_create_and_decode_access_token_success():
+    """Verify create_access_token produces valid JWT with required RFC 7519 claims."""
+    user_id = uuid.uuid4()
+    role = "doctor"
+    token = create_access_token(subject=user_id, role=role)
+
+    assert isinstance(token, str)
+    assert len(token.split(".")) == 3  # Valid JWT format header.payload.signature
+
+    payload = decode_access_token(token)
+    assert payload["sub"] == str(user_id)
+    assert payload["role"] == role
+    assert "exp" in payload
+    assert "iat" in payload
+    assert "nbf" in payload
+    assert "jti" in payload
+    assert payload["exp"] > payload["iat"]
+
+
+def test_decode_access_token_expired():
+    """Verify expired token raises UnauthorizedError with code TOKEN_EXPIRED."""
+    user_id = uuid.uuid4()
+    expired_token = create_access_token(
+        subject=user_id,
+        role="patient",
+        expires_delta=timedelta(seconds=-10),
+    )
+
+    with pytest.raises(UnauthorizedError) as exc_info:
+        decode_access_token(expired_token)
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.code == "TOKEN_EXPIRED"
+
+
+def test_decode_access_token_invalid_signature():
+    """Verify tampered token signature raises UnauthorizedError with code INVALID_TOKEN."""
+    user_id = uuid.uuid4()
+    token = create_access_token(subject=user_id, role="patient")
+    # Tamper with signature
+    parts = token.split(".")
+    tampered_token = f"{parts[0]}.{parts[1]}.tampered_signature"
+
+    with pytest.raises(UnauthorizedError) as exc_info:
+        decode_access_token(tampered_token)
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.code == "INVALID_TOKEN"
+
+
+def test_decode_access_token_rejects_none_algorithm():
+    """Verify token signed with 'none' algorithm is rejected."""
+    payload = {
+        "sub": str(uuid.uuid4()),
+        "role": "patient",
+        "exp": int((datetime.now(UTC) + timedelta(minutes=15)).timestamp()),
+        "iat": int(datetime.now(UTC).timestamp()),
+    }
+    none_token = jwt.encode(payload, key="", algorithm="none")
+
+    with pytest.raises(UnauthorizedError) as exc_info:
+        decode_access_token(none_token)
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.code == "INVALID_TOKEN"
+
+
+def test_decode_access_token_missing_required_claims():
+    """Verify token missing required claims (such as sub or role) is rejected."""
+    settings = get_settings()
+    # Missing 'sub' claim
+    payload = {
+        "role": "doctor",
+        "exp": int((datetime.now(UTC) + timedelta(minutes=15)).timestamp()),
+        "iat": int(datetime.now(UTC).timestamp()),
+    }
+    bad_token = jwt.encode(payload, key=settings.secret_key, algorithm=settings.jwt_algorithm)
+
+    with pytest.raises(UnauthorizedError) as exc_info:
+        decode_access_token(bad_token)
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.code == "INVALID_TOKEN"
+
+
+def test_signing_secrets_sourced_only_from_configuration():
+    """Verify signing secret comes from application Settings, not hardcoded strings."""
+    settings = get_settings()
+    assert settings.secret_key is not None
+    assert len(settings.secret_key) >= 16
+    assert settings.jwt_algorithm in ("HS256", "HS384", "HS512")
+
+
+# ==============================================================================
+# 7. Authentication Service Unit Tests
+# ==============================================================================
+
+
+@pytest.mark.asyncio
+async def test_authenticate_user_success():
+    """Verify authenticate_user verifies password and returns user with profile."""
+    pwd = "ValidPassword123!"
+    user = User(
+        id=uuid.uuid4(),
+        email_normalized="valid.user@amrutam.co.in",
+        password_hash=hash_password(pwd),
+        role="patient",
+        is_active=True,
+    )
+    user.profile = Profile(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        full_name="Valid Patient",
+    )
+
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = user
+
+    authenticated = await authenticate_user(
+        session=mock_session,
+        email="VALID.USER@AMRUTAM.CO.IN",
+        password=pwd,
+    )
+    assert authenticated.id == user.id
+    assert authenticated.role == "patient"
+
+
+@pytest.mark.asyncio
+async def test_authenticate_user_bad_password():
+    """Verify authenticate_user rejects incorrect password with generic INVALID_CREDENTIALS."""
+    user = User(
+        id=uuid.uuid4(),
+        email_normalized="valid.user@amrutam.co.in",
+        password_hash=hash_password("CorrectPassword123!"),
+        role="patient",
+        is_active=True,
+    )
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = user
+
+    with pytest.raises(UnauthorizedError) as exc_info:
+        await authenticate_user(
+            session=mock_session,
+            email="valid.user@amrutam.co.in",
+            password="WrongPassword999!",
+        )
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.code == "INVALID_CREDENTIALS"
+
+
+@pytest.mark.asyncio
+async def test_authenticate_user_nonexistent_email():
+    """Verify authenticate_user returns generic error for unknown email."""
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = None
+
+    with pytest.raises(UnauthorizedError) as exc_info:
+        await authenticate_user(
+            session=mock_session,
+            email="nonexistent@amrutam.co.in",
+            password="SomePassword123!",
+        )
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.code == "INVALID_CREDENTIALS"
+
+
+@pytest.mark.asyncio
+async def test_authenticate_user_inactive_account():
+    """Verify authenticate_user rejects inactive account with ACCOUNT_INACTIVE."""
+    pwd = "ValidPassword123!"
+    user = User(
+        id=uuid.uuid4(),
+        email_normalized="inactive.user@amrutam.co.in",
+        password_hash=hash_password(pwd),
+        role="patient",
+        is_active=False,
+    )
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = user
+
+    with pytest.raises(ForbiddenError) as exc_info:
+        await authenticate_user(
+            session=mock_session,
+            email="inactive.user@amrutam.co.in",
+            password=pwd,
+        )
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.code == "ACCOUNT_INACTIVE"
+
+
+# ==============================================================================
+# 8. API Endpoint Tests: /auth/login and /auth/me
+# ==============================================================================
+
+
+def test_api_login_success():
+    """Verify POST /api/v1/auth/login returns access token and user payload."""
+    pwd = "PatientSecurePassword123!"
+    user_id = uuid.uuid4()
+    user = User(
+        id=user_id,
+        email_normalized="patient.login@amrutam.co.in",
+        password_hash=hash_password(pwd),
+        role="patient",
+        is_active=True,
+        mfa_enabled=False,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    user.profile = Profile(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        full_name="Login Test User",
+        phone="+919876543210",
+        date_of_birth=date(1992, 4, 12),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = user
+
+    app = create_app()
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "PATIENT.LOGIN@AMRUTAM.CO.IN",
+            "password": pwd,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+    assert data["expires_in"] > 0
+    assert data["user"]["id"] == str(user_id)
+    assert data["user"]["email"] == "patient.login@amrutam.co.in"
+    assert data["user"]["role"] == "patient"
+    assert data["user"]["profile"]["full_name"] == "Login Test User"
+    # Guaranteed sensitive fields omitted
+    assert "password_hash" not in str(response.text)
+    assert "mfa_secret" not in str(response.text)
+
+
+def test_api_login_bad_credentials():
+    """Verify POST /api/v1/auth/login returns HTTP 401 with INVALID_CREDENTIALS on bad password."""
+    user = User(
+        id=uuid.uuid4(),
+        email_normalized="patient@amrutam.co.in",
+        password_hash=hash_password("CorrectPassword!"),
+        role="patient",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = user
+
+    app = create_app()
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "patient@amrutam.co.in",
+            "password": "WrongPassword!",
+        },
+    )
+
+    assert response.status_code == 401
+    data = response.json()
+    assert data["error"]["code"] == "INVALID_CREDENTIALS"
+    assert "invalid email or password" in data["error"]["message"].lower()
+
+
+def test_api_login_nonexistent_email():
+    """Verify POST /api/v1/auth/login returns HTTP 401 with INVALID_CREDENTIALS on missing user."""
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = None
+
+    app = create_app()
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "unknown@amrutam.co.in",
+            "password": "AnyPassword123!",
+        },
+    )
+
+    assert response.status_code == 401
+    data = response.json()
+    assert data["error"]["code"] == "INVALID_CREDENTIALS"
+
+
+def test_api_login_inactive_account():
+    """Verify POST /api/v1/auth/login returns HTTP 403 when account is inactive."""
+    pwd = "ValidPassword123!"
+    user = User(
+        id=uuid.uuid4(),
+        email_normalized="inactive@amrutam.co.in",
+        password_hash=hash_password(pwd),
+        role="patient",
+        is_active=False,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = user
+
+    app = create_app()
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "inactive@amrutam.co.in",
+            "password": pwd,
+        },
+    )
+
+    assert response.status_code == 403
+    data = response.json()
+    assert data["error"]["code"] == "ACCOUNT_INACTIVE"
+
+
+def test_api_login_validation_error():
+    """Verify invalid login request body returns HTTP 422 VALIDATION_ERROR."""
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "not-a-valid-email",
+            "password": "",
+        },
+    )
+
+    assert response.status_code == 422
+    data = response.json()
+    assert data["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_api_get_me_success():
+    """Verify GET /api/v1/auth/me returns current user profile with valid Bearer token."""
+    user_id = uuid.uuid4()
+    user = User(
+        id=user_id,
+        email_normalized="doctor.profile@amrutam.co.in",
+        password_hash="dummyhash",
+        role="doctor",
+        is_active=True,
+        mfa_enabled=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    user.profile = Profile(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        full_name="Dr. Veda Shastri",
+        phone="+919876543210",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+
+    token = create_access_token(subject=user_id, role="doctor")
+
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = user
+
+    app = create_app()
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == str(user_id)
+    assert data["email"] == "doctor.profile@amrutam.co.in"
+    assert data["role"] == "doctor"
+    assert data["mfa_enabled"] is True
+    assert data["profile"]["full_name"] == "Dr. Veda Shastri"
+    # Never leaks credentials
+    assert "password_hash" not in str(response.text)
+
+
+def test_api_get_me_missing_token():
+    """Verify GET /api/v1/auth/me returns HTTP 401 AUTHENTICATION_REQUIRED without header."""
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get("/api/v1/auth/me")
+
+    assert response.status_code == 401
+    data = response.json()
+    assert data["error"]["code"] == "AUTHENTICATION_REQUIRED"
+
+
+def test_api_get_me_invalid_token():
+    """Verify GET /api/v1/auth/me returns HTTP 401 INVALID_TOKEN with corrupt token."""
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": "Bearer not-a-valid-jwt-token"},
+    )
+
+    assert response.status_code == 401
+    data = response.json()
+    assert data["error"]["code"] == "INVALID_TOKEN"
+
+
+def test_api_get_me_expired_token():
+    """Verify GET /api/v1/auth/me returns HTTP 401 TOKEN_EXPIRED with expired token."""
+    expired_token = create_access_token(
+        subject=uuid.uuid4(),
+        role="patient",
+        expires_delta=timedelta(seconds=-10),
+    )
+
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {expired_token}"},
+    )
+
+    assert response.status_code == 401
+    data = response.json()
+    assert data["error"]["code"] == "TOKEN_EXPIRED"
+
+
+def test_api_get_me_inactive_user():
+    """Verify GET /api/v1/auth/me returns HTTP 403 ACCOUNT_INACTIVE if user is inactive."""
+    user_id = uuid.uuid4()
+    user = User(
+        id=user_id,
+        email_normalized="inactive@amrutam.co.in",
+        password_hash="dummyhash",
+        role="patient",
+        is_active=False,
+    )
+    token = create_access_token(subject=user_id, role="patient")
+
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = user
+
+    app = create_app()
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    data = response.json()
+    assert data["error"]["code"] == "ACCOUNT_INACTIVE"
+
+
+# ==============================================================================
+# 9. Role-Based Authorization Dependency Tests
+# ==============================================================================
+
+
+def test_require_roles_allows_matching_role():
+    """Verify require_roles dependency permits users with authorized roles."""
+    user_id = uuid.uuid4()
+    doctor_user = User(
+        id=user_id,
+        email_normalized="doctor@amrutam.co.in",
+        password_hash="dummy",
+        role="doctor",
+        is_active=True,
+    )
+
+    token = create_access_token(subject=user_id, role="doctor")
+
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = doctor_user
+
+    # Create temporary router testing require_doctor dependency
+    test_router = APIRouter()
+
+    @test_router.get("/doctor-only", dependencies=[Depends(require_doctor)])
+    async def doctor_endpoint():
+        return {"status": "doctor_authorized"}
+
+    app = create_app()
+    app.include_router(test_router, prefix="/api/v1")
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/v1/doctor-only",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "doctor_authorized"}
+
+
+def test_require_roles_denies_wrong_role():
+    """Verify require_roles returns HTTP 403 INSUFFICIENT_PERMISSIONS for unauthorized roles."""
+    user_id = uuid.uuid4()
+    patient_user = User(
+        id=user_id,
+        email_normalized="patient@amrutam.co.in",
+        password_hash="dummy",
+        role="patient",
+        is_active=True,
+    )
+
+    token = create_access_token(subject=user_id, role="patient")
+
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = patient_user
+
+    test_router = APIRouter()
+
+    @test_router.get("/doctor-only", dependencies=[Depends(require_doctor)])
+    async def doctor_endpoint():
+        return {"status": "doctor_authorized"}
+
+    app = create_app()
+    app.include_router(test_router, prefix="/api/v1")
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/v1/doctor-only",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    data = response.json()
+    assert data["error"]["code"] == "INSUFFICIENT_PERMISSIONS"
+
+
+def test_require_roles_allows_multiple_roles():
+    """Verify require_roles allows any role in the permitted set."""
+    user_id = uuid.uuid4()
+    admin_user = User(
+        id=user_id,
+        email_normalized="admin@amrutam.co.in",
+        password_hash="dummy",
+        role="admin",
+        is_active=True,
+    )
+
+    token = create_access_token(subject=user_id, role="admin")
+
+    mock_session = AsyncMock()
+    mock_session.scalar.return_value = admin_user
+
+    test_router = APIRouter()
+
+    @test_router.get("/staff-only", dependencies=[Depends(require_roles("doctor", "admin"))])
+    async def staff_endpoint():
+        return {"status": "staff_authorized"}
+
+    app = create_app()
+    app.include_router(test_router, prefix="/api/v1")
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/v1/staff-only",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "staff_authorized"}

@@ -15,7 +15,7 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **05** | SQLAlchemy Persistence & Alembic Migrations | `feat: add PostgreSQL persistence and Alembic migrations` | **Completed & Committed** |
 | **06** | Core Database Models | `feat: add core telemedicine database models` | **Implemented (Pending Commit)** |
 | **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | **Completed & Committed** |
-| **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | *Planned* |
+| **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | **Implemented (Pending Commit)** |
 | **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | **Completed & Committed** |
 | **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | *Next Up* |
 | **11** | Idempotency Storage & Request Handling | `feat: add idempotency key persistence for write requests` | *Planned* |
@@ -877,6 +877,99 @@ Once verified, stage and commit Milestone 07:
 git add pyproject.toml app/ tests/ docs/security-checklist.md PROGRESS.md
 git commit -m "feat: add user registration and secure password hashing"
 ```
+
+---
+
+### Milestone 08: JWT Authentication & Role-Based Authorization
+- **Commit Message:** `feat: add JWT authentication and role-based authorization`
+- **Scope:** Implement login and safe access-token issuing/verification with short expiry and strict configuration. Validate signature, expiry and configured claims/algorithm; never accept a token-selected algorithm or log tokens. Add `get_current_user`, `require_roles`, and reusable authorization dependencies. Include `/api/v1/auth/me`. Resource ownership checks will be implemented with relevant feature services, so do not assume role checks alone authorize sensitive records. Add tests for bad credentials, inactive account, missing/invalid/expired token, allowed and denied role access, and safe response payloads. Ensure signing secrets come only from configuration.
+
+#### What Was Implemented:
+1. **JWT Generation & Strict Verification ([app/core/security.py](app/core/security.py)):**
+   - Implemented `create_access_token(subject, role, expires_delta)` with standard RFC 7519 claims (`sub`, `role`, `iat`, `nbf`, `exp`, `jti`).
+   - Implemented `decode_access_token(token)` enforcing signature verification, expiration check, and configured algorithm restriction (`algorithms=[settings.jwt_algorithm]`).
+   - Strictly rejects `none` algorithm or algorithm-switching attacks. Never logs raw tokens.
+2. **Authentication Schemas ([app/schemas/auth.py](app/schemas/auth.py)):**
+   - `LoginRequest`: Validates normalized email and password length (1-128 chars).
+   - `TokenResponse`: Returns `access_token`, `token_type="bearer"`, `expires_in` seconds, and sanitized `user` profile (`UserResponse`).
+3. **Authentication Business Services ([app/services/auth_service.py](app/services/auth_service.py)):**
+   - `authenticate_user()`: Verifies normalized email and password using Argon2id. Uses generic `INVALID_CREDENTIALS` (HTTP 401) to eliminate user enumeration. Enforces active account checks with `ACCOUNT_INACTIVE` (HTTP 403).
+   - `get_user_by_id()`: Retrieves user by UUID with profile eagerly loaded via `selectinload`.
+4. **Reusable Authorization Dependencies ([app/api/deps.py](app/api/deps.py)):**
+   - `get_current_user`: Resolves bearer token from `Authorization: Bearer <token>` header; decodes and validates token; rejects missing/invalid tokens with standardized `UnauthorizedError` (HTTP 401) and inactive accounts with `ForbiddenError` (HTTP 403).
+   - `require_roles(*allowed_roles)`: Dependency factory enforcing role-based access control. Returns `ForbiddenError("You do not have permission to perform this action.", code="INSUFFICIENT_PERMISSIONS")` (HTTP 403) on unauthorized roles.
+   - Provided pre-configured dependency shortcuts: `require_doctor`, `require_admin`, `require_doctor_or_admin`, `require_patient`.
+5. **API Endpoints ([app/api/v1/endpoints/auth.py](app/api/v1/endpoints/auth.py)):**
+   - `POST /api/v1/auth/login`: Authenticates user and issues signed JWT bearer token.
+   - `GET /api/v1/auth/me`: Returns sanitized user and demographic profile details for current authenticated caller.
+6. **Automated Test Suite (27 test cases added in [tests/test_auth.py](tests/test_auth.py)):**
+   - JWT token unit tests: creation, standard RFC claims, expiry rejection (`TOKEN_EXPIRED`), tampered signature rejection (`INVALID_TOKEN`), algorithm confusion rejection, missing claims rejection, settings secret validation.
+   - Authentication service tests: valid credentials, bad password, non-existent email, inactive account rejection.
+   - API endpoint tests: login success, bad credentials (401), missing user (401), inactive account (403), request validation error (422), `/auth/me` profile retrieval (200), missing token (401), invalid token (401), expired token (401), inactive user rejection (403).
+   - Role authorization tests: authorized role access (200), unauthorized role denial (403), multi-role authorized access (200).
+   - Live PostgreSQL integration test: verifies user registration, live password hash verification, and token generation end-to-end against live PostgreSQL.
+
+---
+
+### Step-by-Step Verification Guide for Milestone 08
+
+Follow these instructions to verify Milestone 08 locally:
+
+#### Step 1: Run Ruff Linter
+Verify code style, typing, and import ordering:
+```powershell
+.\.venv\Scripts\ruff.exe check .
+```
+**Expected Output:**
+```
+All checks passed!
+```
+
+#### Step 2: Run Ruff Format Check
+Verify consistent formatting across all codebase files:
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+```
+**Expected Output:**
+```
+63 files already formatted
+```
+
+#### Step 3: Run the Complete Test Suite
+Execute Pytest across all test suites:
+```powershell
+.\.venv\Scripts\pytest.exe -v
+```
+**Expected Output:**
+```
+tests/test_auth.py .......................................               [ 42%]
+...
+======================== 91 passed, 1 warning in 3.50s ========================
+```
+
+#### Step 4: Verify Live Endpoints & Interactive OpenAPI Docs
+Start the local development server:
+```powershell
+.\.venv\Scripts\uvicorn.exe app.main:app --reload
+```
+
+1. **Verify OpenAPI Documentation:**
+   Open browser at `http://127.0.0.1:8000/docs`
+   Confirm endpoints `POST /api/v1/auth/login` and `GET /api/v1/auth/me` are listed with tag `auth`.
+
+2. **Test Login (HTTP 200):**
+   ```powershell
+   curl.exe -i -X POST http://127.0.0.1:8000/api/v1/auth/login `
+     -H "Content-Type: application/json" `
+     -d '{"email":"patient@example.com","password":"ValidPassword123!"}'
+   ```
+   **Expected Response:** HTTP 200 with `access_token`, `token_type: "bearer"`, and sanitized user object.
+
+3. **Test Authenticated `/me` (HTTP 200):**
+   ```powershell
+   curl.exe -i http://127.0.0.1:8000/api/v1/auth/me `
+     -H "Authorization: Bearer <your-access-token>"
+   ```
 
 ---
 
