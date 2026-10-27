@@ -17,8 +17,8 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | **Completed & Committed** |
 | **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | **Implemented (Pending Commit)** |
 | **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | **Completed & Committed** |
-| **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | *Next Up* |
-| **11** | Idempotency Storage & Request Handling | `feat: add idempotency key persistence for write requests` | *Planned* |
+| **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | **Implemented (Pending Commit)** |
+| **11** | Idempotency Storage & Request Handling | `feat: add idempotency key persistence for write requests` | *Next Up* |
 | **12** | Atomic, Concurrency-Safe Booking Workflow | `feat: implement atomic idempotent appointment booking` | *Planned* |
 | **13** | Booking Retrieval & Cancellation Lifecycle | `feat: add booking retrieval and cancellation lifecycle` | *Planned* |
 | **14** | Consultation Lifecycle State Machine | `feat: enforce consultation lifecycle transitions` | *Planned* |
@@ -1103,5 +1103,177 @@ Once verified, stage and commit Milestone 09:
 git add app/ tests/ docs/requirements-traceability.md PROGRESS.md
 git commit -m "feat: add doctor profiles and search filters"
 ```
+
+---
+
+### Milestone 10: Doctor Availability Slot Management
+- **Commit Message:** `feat: add doctor availability management`
+- **Scope:** Provide endpoints to manage doctor availability slots (`POST /me/slots`, `PATCH /me/slots/{slot_id}`, `DELETE /me/slots/{slot_id}`, `GET /{doctor_id}/slots`), enforce slot authorization, reject invalid/past intervals and overlapping slots for the same doctor, protect booked slots, and enforce database-level constraints using PostgreSQL `btree_gist` exclusion constraints.
+
+#### What Was Implemented:
+1. **Database Migration (`alembic/versions/0003_slot_constraints_and_idx.py`):**
+   - Enabled PostgreSQL `btree_gist` extension: `CREATE EXTENSION IF NOT EXISTS btree_gist;`.
+   - Added `chk_availability_slots_status` check constraint enforcing valid statuses: `status IN ('available', 'booked', 'blocked')`.
+   - Added range index `ix_availability_slots_doctor_range` on `(doctor_id, start_at, end_at)`.
+   - Added GiST exclusion constraint `exclude_overlapping_doctor_slots`:
+     ```sql
+     ALTER TABLE availability_slots
+     ADD CONSTRAINT exclude_overlapping_doctor_slots
+     EXCLUDE USING gist (
+         doctor_id WITH =,
+         tstzrange(start_at, end_at) WITH &&
+     );
+     ```
+   - Guaranteed at the database level that no doctor can ever have overlapping time intervals.
+
+2. **SQLAlchemy Model Invariants (`app/models/doctor.py`):**
+   - Updated `AvailabilitySlot.__table_args__` with `chk_availability_slots_status` and `ix_availability_slots_doctor_range`.
+
+3. **Pydantic Schemas (`app/schemas/availability.py`):**
+   - `SlotBase`: Base timestamps validator enforcing `end_at > start_at` and duration limits (10 minutes minimum, 4 hours maximum).
+   - `SlotCreateRequest`: Single slot creation payload.
+   - `SlotBatchCreateRequest`: Batch creation payload supporting between 1 and 50 slots per request.
+   - `SlotUpdateRequest`: Updates slot status (`available` or `blocked`) or adjusts time intervals.
+   - `SlotResponse`: Comprehensive slot representation including UUID, timestamps, status, and UTC audit dates.
+   - `SlotListResponse`: Paginated or filtered slot list with total count.
+
+4. **Business Services (`app/services/availability_service.py`):**
+   - `get_doctor_by_user_id`: Safely resolves the Doctor entity from the authenticated User UUID.
+   - `create_doctor_slots`: Rejects past timestamps (`PAST_SLOT_NOT_ALLOWED`), checks internal batch overlaps, performs pre-flight SQL overlap queries, inserts slots in an atomic transaction, and maps PostgreSQL exclusion violations (`IntegrityError`) to HTTP 409 `SLOT_OVERLAP`.
+   - `list_doctor_slots`: Returns availability slots for a doctor with optional status filtering and UTC time window filtering.
+   - `update_doctor_slot`: Verifies doctor ownership, prevents modification of booked slots (`SLOT_ALREADY_BOOKED`), and validates non-overlapping intervals when altering times.
+   - `delete_doctor_slot`: Verifies doctor ownership, rejects deletion of booked slots (`SLOT_ALREADY_BOOKED`), and permanently removes unbooked slots.
+
+5. **REST API Endpoints (`app/api/v1/endpoints/doctors.py`):**
+   - `POST /api/v1/doctors/me/slots`: Doctor-authenticated endpoint creating single or batch availability slots (HTTP 201).
+   - `PATCH /api/v1/doctors/me/slots/{slot_id}`: Doctor-authenticated endpoint modifying unbooked slot status or duration (HTTP 200).
+   - `DELETE /api/v1/doctors/me/slots/{slot_id}`: Doctor-authenticated endpoint deleting an unbooked slot (HTTP 204).
+   - `GET /api/v1/doctors/{doctor_id}/slots`: Public endpoint returning open and filtered slots for appointment discovery (HTTP 200).
+
+6. **Comprehensive Test Suite (`tests/test_availability.py`):**
+   - 23 automated tests covering:
+     - Schema validation (inverted timestamps, duration limits, invalid statuses).
+     - Service error handling (past slots, batch duplicates, booked slot modification protection, ownership checks).
+     - Full HTTP API endpoint flows with JWT authentication.
+     - Live PostgreSQL GiST exclusion constraint enforcement confirming database-level rejection of overlapping slots.
+
+7. **Test Isolation Enhancement (`tests/conftest.py`):**
+   - Added autouse `cleanup_db` fixture ensuring async database engines and connection pools are safely closed and reset between test executions across isolated event loops.
+
+---
+
+## Milestone 10 Verification Guide
+
+### Step 1: Run Linting and Formatting
+```powershell
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\ruff.exe format --check .
+```
+**Expected Output:**
+```
+All checks passed!
+67 files already formatted
+```
+
+---
+
+### Step 2: Run the Full Automated Test Suite
+```powershell
+.\.venv\Scripts\pytest.exe -v
+```
+**Expected Output:**
+```
+collected 114 items
+
+tests\test_auth.py .......................................               [ 34%]
+tests\test_availability.py .......................                       [ 54%]
+tests\test_container_config.py ...                                       [ 57%]
+tests\test_database.py ..........                                        [ 66%]
+tests\test_doctors.py ............                                       [ 77%]
+tests\test_errors.py ....                                                [ 80%]
+tests\test_health.py ...                                                 [ 83%]
+tests\test_logging.py ..                                                 [ 85%]
+tests\test_middleware.py ....                                            [ 88%]
+tests\test_models.py .......                                             [ 94%]
+tests\test_settings.py ......                                            [100%]
+
+======================= 114 passed, 1 warning in 3.34s =======================
+```
+
+---
+
+### Step 3: Run Database Migrations on Live PostgreSQL
+```powershell
+.\.venv\Scripts\alembic.exe upgrade head
+```
+**Expected Output:**
+```
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+```
+
+---
+
+### Step 4: Live HTTP API Verification with cURL
+Start the application server:
+```powershell
+.\.venv\Scripts\uvicorn.exe app.main:app --reload
+```
+
+1. **Register and Login as Doctor:**
+   ```powershell
+   # Register doctor
+   curl.exe -X POST "http://127.0.0.1:8000/api/v1/auth/register" `
+     -H "Content-Type: application/json" `
+     -d '{"email": "dr.sharma@amrutam.co.in", "password": "StrongPassword123!", "full_name": "Dr. Sharma", "phone": "+919876543210", "role": "doctor"}'
+   
+   # Login to get JWT
+   $TOKEN = (curl.exe -s -X POST "http://127.0.0.1:8000/api/v1/auth/login" `
+     -H "Content-Type: application/json" `
+     -d '{"email": "dr.sharma@amrutam.co.in", "password": "StrongPassword123!"}' | ConvertFrom-Json).access_token
+   ```
+
+2. **Create Availability Slots (Single or Batch):**
+   ```powershell
+   curl.exe -i -X POST "http://127.0.0.1:8000/api/v1/doctors/me/slots" `
+     -H "Authorization: Bearer $TOKEN" `
+     -H "Content-Type: application/json" `
+     -d '{"start_at": "2026-11-01T09:00:00Z", "end_at": "2026-11-01T09:30:00Z"}'
+   ```
+   **Expected Response:** HTTP 201 Created with JSON array containing the created slot.
+
+3. **Verify Rejection of Overlapping Slot (HTTP 409):**
+   ```powershell
+   curl.exe -i -X POST "http://127.0.0.1:8000/api/v1/doctors/me/slots" `
+     -H "Authorization: Bearer $TOKEN" `
+     -H "Content-Type: application/json" `
+     -d '{"start_at": "2026-11-01T09:15:00Z", "end_at": "2026-11-01T09:45:00Z"}'
+   ```
+   **Expected Response:** HTTP 409 Conflict with `code: "SLOT_OVERLAP"`.
+
+4. **Verify Rejection of Past Slot (HTTP 400):**
+   ```powershell
+   curl.exe -i -X POST "http://127.0.0.1:8000/api/v1/doctors/me/slots" `
+     -H "Authorization: Bearer $TOKEN" `
+     -H "Content-Type: application/json" `
+     -d '{"start_at": "2020-01-01T09:00:00Z", "end_at": "2020-01-01T09:30:00Z"}'
+   ```
+   **Expected Response:** HTTP 400 Bad Request with `code: "PAST_SLOT_NOT_ALLOWED"`.
+
+5. **Verify Public Slot Discovery:**
+   ```powershell
+   curl.exe -i "http://127.0.0.1:8000/api/v1/doctors/{doctor_id}/slots"
+   ```
+   **Expected Response:** HTTP 200 OK with `total` and `items` array.
+
+---
+
+### Step 5: Suggested Git Commit Command
+Per `AGENTS.md`, commits are not made automatically by the agent. Review the diff and execute:
+```bash
+git add alembic/ app/ tests/ docs/ PROGRESS.md
+git commit -m "feat: add doctor availability management"
+```
+
 
 

@@ -40,10 +40,18 @@ This document specifies the logical data model for the Amrutam Telemedicine Back
 - `end_at`: TIMESTAMPTZ, non-null.
 - `status`: VARCHAR(32), non-null, default `'available'` (`available`, `booked`, `blocked`).
 - `created_at`, `updated_at`: TIMESTAMPTZ, non-null.
-- **Constraints:**
-  - Check constraint: `end_at > start_at`.
-  - Composite index: `(doctor_id, start_at, status)`.
-  - Exclusion / validation constraint preventing overlapping active slots for the same doctor.
+- **Constraints & Indexes:**
+  - Check constraint: `end_at > start_at` (`chk_slot_time_interval`).
+  - Check constraint: `status IN ('available', 'booked', 'blocked')` (`chk_availability_slots_status`).
+  - Exclusion constraint: `exclude_overlapping_doctor_slots` via PostgreSQL GiST (`btree_gist` extension): `EXCLUDE USING gist (doctor_id WITH =, tstzrange(start_at, end_at) WITH &&)`.
+  - Composite indexes: `(doctor_id, start_at, status)` (`ix_availability_slots_doctor_start_status`) and `(doctor_id, start_at, end_at)` (`ix_availability_slots_doctor_range`).
+- **Lifecycle & Booking Rules:**
+  - Statuses:
+    - `'available'`: Open for appointment booking by patients.
+    - `'booked'`: Reserved for an active consultation; protected from deletion or modification by the doctor.
+    - `'blocked'`: Administratively blocked by the doctor; ineligible for appointment booking.
+  - Cancellation & Reuse: When an active consultation occupying a slot is cancelled, the slot transition back to `'available'` must occur atomically within the same database transaction.
+
 
 ### consultations
 - `id`: UUID primary key.

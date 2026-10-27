@@ -12,23 +12,13 @@ from app.api.v1.endpoints.health import ReadinessResponse
 from app.core.config import get_settings
 from app.db.session import (
     check_database_connection,
-    close_database_connections,
     get_db_session,
     get_engine,
     get_session_factory,
-    reset_database_state,
 )
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from tests.conftest import is_postgres_available
-
-
-@pytest.fixture(autouse=True)
-async def cleanup_db():
-    """Ensure database singletons are cleaned up between test executions."""
-    yield
-    await close_database_connections()
-    reset_database_state()
 
 
 def test_settings_database_url_and_pool_config():
@@ -174,7 +164,7 @@ def test_alembic_configuration_wired_to_settings():
     heads = script.get_heads()
 
     assert len(heads) == 1
-    assert heads[0] == "0002_create_core_models"
+    assert heads[0] == "0003_slot_constraints_and_idx"
 
 
 def test_alembic_offline_migration_sql_generation(capsys):
@@ -189,6 +179,8 @@ def test_alembic_offline_migration_sql_generation(capsys):
     assert "CREATE TABLE users" in captured.out
     assert "CREATE TABLE consultations" in captured.out
     assert "0002_create_core_models" in captured.out
+    assert "0003_slot_constraints_and_idx" in captured.out
+    assert "exclude_overlapping_doctor_slots" in captured.out
 
 
 @pytest.mark.skipif(

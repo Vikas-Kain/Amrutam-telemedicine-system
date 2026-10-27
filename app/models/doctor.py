@@ -148,7 +148,12 @@ class AvailabilitySlot(Base):
 
     __table_args__ = (
         CheckConstraint("end_at > start_at", name="chk_slot_time_interval"),
+        CheckConstraint(
+            "status IN ('available', 'booked', 'blocked')",
+            name="chk_availability_slots_status",
+        ),
         Index("ix_availability_slots_doctor_start_status", "doctor_id", "start_at", "status"),
+        Index("ix_availability_slots_doctor_range", "doctor_id", "start_at", "end_at"),
     )
 
     doctor: Mapped["Doctor"] = relationship("Doctor", back_populates="slots")

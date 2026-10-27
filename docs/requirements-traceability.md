@@ -5,7 +5,7 @@ This matrix maps each requirement from the assignment brief to the planned imple
 | Assignment requirement | Planned implementation | Status | Evidence to capture |
 |---|---|---|---|
 | User lifecycle, authentication, roles | Auth endpoints (`/api/v1/auth`), user/profile models, RBAC and resource checks | Implemented | Implemented in `app/api/v1/endpoints/auth.py`, `app/core/security.py`, `app/api/deps.py`; verified in `tests/test_auth.py` |
-| Doctor availability and booking | Availability CRUD/search, row locking (`SELECT FOR UPDATE`), DB constraints, idempotency | Not started | Multi-connection concurrent booking race and idempotency replay tests |
+| Doctor availability and booking | Availability CRUD/search, row locking (`SELECT FOR UPDATE`), DB constraints, idempotency | In progress | Availability slot management and GiST exclusion constraints implemented in Milestone 10; consultation booking with row locking in Milestone 11 |
 | Consultation lifecycle and prescriptions | Explicit state machine (`booked` → `confirmed` → `in_progress` → `completed`), prescriptions/items and access control | Not started | State-transition matrix tests and cross-user authorization tests |
 | Search and filtering | Indexed doctor/list filters, bounded pagination (`page`, `page_size`), deterministic sorting (`created_at DESC, id DESC`) | Implemented | Implemented in `app/api/v1/endpoints/doctors.py` and `app/services/doctor_service.py`; verified in `tests/test_doctors.py` |
 | Compliance and audit trails | Audit service, append-only structured audit events, security documentation | Not started | Audit event assertions and sensitive payload redaction verification |

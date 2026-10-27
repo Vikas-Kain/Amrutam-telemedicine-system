@@ -30,3 +30,13 @@ def client() -> Generator[TestClient, None, None]:
     app = create_app()
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture(autouse=True)
+async def cleanup_db():
+    """Ensure database singletons and connection pools are cleaned up between test executions."""
+    yield
+    from app.db.session import close_database_connections, reset_database_state
+
+    await close_database_connections()
+    reset_database_state()
