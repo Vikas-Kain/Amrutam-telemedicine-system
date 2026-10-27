@@ -1214,31 +1214,52 @@ INFO  [alembic.runtime.migration] Will assume transactional DDL.
 
 ---
 
-### Step 4: Live HTTP API Verification with cURL
+### Step 4: Live HTTP API Verification with cURL / PowerShell
 Start the application server:
 ```powershell
 .\.venv\Scripts\uvicorn.exe app.main:app --reload
 ```
 
+> [!TIP]
+> In Windows PowerShell, when invoking `curl.exe` with JSON strings containing spaces and double quotes, prefix with `--%` (stop-parsing symbol) or use PowerShell's native `Invoke-RestMethod` to prevent PowerShell from stripping quotes.
+
 1. **Register and Login as Doctor:**
+   **Using `curl.exe` with stop-parsing token (`--%`):**
    ```powershell
    # Register doctor
-   curl.exe -X POST "http://127.0.0.1:8000/api/v1/auth/register" `
-     -H "Content-Type: application/json" `
-     -d '{"email": "dr.sharma@amrutam.co.in", "password": "StrongPassword123!", "full_name": "Dr. Sharma", "phone": "+919876543210", "role": "doctor"}'
-   
+   curl.exe --% -i -X POST http://127.0.0.1:8000/api/v1/auth/register -H "Content-Type: application/json" -d "{\"email\": \"dr.sharma@amrutam.co.in\", \"password\": \"StrongPassword123!\", \"full_name\": \"Dr. Sharma\", \"phone\": \"+919876543210\", \"role\": \"doctor\"}"
+
    # Login to get JWT
-   $TOKEN = (curl.exe -s -X POST "http://127.0.0.1:8000/api/v1/auth/login" `
-     -H "Content-Type: application/json" `
-     -d '{"email": "dr.sharma@amrutam.co.in", "password": "StrongPassword123!"}' | ConvertFrom-Json).access_token
+   $TOKEN = (curl.exe --% -s -X POST http://127.0.0.1:8000/api/v1/auth/login -H "Content-Type: application/json" -d "{\"email\": \"dr.sharma@amrutam.co.in\", \"password\": \"StrongPassword123!\"}" | ConvertFrom-Json).access_token
+   ```
+
+   **Or using native PowerShell `Invoke-RestMethod`:**
+   ```powershell
+   $body = @{
+       email = "dr.sharma@amrutam.co.in"
+       password = "StrongPassword123!"
+       full_name = "Dr. Sharma"
+       phone = "+919876543210"
+       role = "doctor"
+   } | ConvertTo-Json
+
+   $reg = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/auth/register" -ContentType "application/json" -Body $body
+   $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/auth/login" -ContentType "application/json" -Body (@{ email = "dr.sharma@amrutam.co.in"; password = "StrongPassword123!" } | ConvertTo-Json)
+   $TOKEN = $login.access_token
    ```
 
 2. **Create Availability Slots (Single or Batch):**
    ```powershell
+   # Using curl.exe (escape inner quotes with \"):
    curl.exe -i -X POST "http://127.0.0.1:8000/api/v1/doctors/me/slots" `
      -H "Authorization: Bearer $TOKEN" `
      -H "Content-Type: application/json" `
-     -d '{"start_at": "2026-11-01T09:00:00Z", "end_at": "2026-11-01T09:30:00Z"}'
+     -d '{\"start_at\":\"2026-11-01T09:00:00Z\",\"end_at\":\"2026-11-01T09:30:00Z\"}'
+
+   # Or using Invoke-RestMethod:
+   Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/doctors/me/slots" `
+     -Headers @{ Authorization = "Bearer $TOKEN" } -ContentType "application/json" `
+     -Body (@{ start_at = "2026-11-01T09:00:00Z"; end_at = "2026-11-01T09:30:00Z" } | ConvertTo-Json)
    ```
    **Expected Response:** HTTP 201 Created with JSON array containing the created slot.
 
@@ -1247,7 +1268,7 @@ Start the application server:
    curl.exe -i -X POST "http://127.0.0.1:8000/api/v1/doctors/me/slots" `
      -H "Authorization: Bearer $TOKEN" `
      -H "Content-Type: application/json" `
-     -d '{"start_at": "2026-11-01T09:15:00Z", "end_at": "2026-11-01T09:45:00Z"}'
+     -d '{\"start_at\":\"2026-11-01T09:15:00Z\",\"end_at\":\"2026-11-01T09:45:00Z\"}'
    ```
    **Expected Response:** HTTP 409 Conflict with `code: "SLOT_OVERLAP"`.
 
@@ -1256,7 +1277,7 @@ Start the application server:
    curl.exe -i -X POST "http://127.0.0.1:8000/api/v1/doctors/me/slots" `
      -H "Authorization: Bearer $TOKEN" `
      -H "Content-Type: application/json" `
-     -d '{"start_at": "2020-01-01T09:00:00Z", "end_at": "2020-01-01T09:30:00Z"}'
+     -d '{\"start_at\":\"2020-01-01T09:00:00Z\",\"end_at\":\"2020-01-01T09:30:00Z\"}'
    ```
    **Expected Response:** HTTP 400 Bad Request with `code: "PAST_SLOT_NOT_ALLOWED"`.
 
