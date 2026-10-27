@@ -1,0 +1,46 @@
+# Version control
+.git/
+.gitignore
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Environment files and credentials
+.env
+.env.*
+!.env.example
+*.env
+*.pem
+*.key
+
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Packaging and IDE
+build/
+dist/
+*.egg-info/
+.idea/
+.vscode/
+
+# Local agent pack and documentation not needed at runtime
+amrutam_backend_agent_pack/
+AGENTS.md
+PROGRESS.md
+docs/
+tests/

@@ -67,7 +67,36 @@ uvicorn app.main:app --reload
 - **Process Liveness Probe:** `http://127.0.0.1:8000/health/live`
 - **OpenAPI JSON Schema:** `http://127.0.0.1:8000/openapi.json`
 
-### 3. Verification and testing commands
+### 3. Containerized development (Docker Compose)
+
+The repository provides a containerized development environment using Docker Compose with an unprivileged, multi-stage FastAPI application (`app`) and a PostgreSQL 16 database (`db`) with persistent storage and health monitoring.
+
+```bash
+# 1. Create local environment file from template
+cp .env.example .env
+
+# 2. Build and start containers in detached mode
+docker compose up --build -d
+
+# 3. Verify container status and health check state
+docker compose ps
+
+# 4. Inspect application logs
+docker compose logs -f app
+
+# 5. Test process liveness probe
+curl http://localhost:8000/health/live
+
+# 6. Stop containers (preserves database volume)
+docker compose down
+
+# 7. Stop containers and delete persistent database volume (wipes data)
+docker compose down -v
+```
+
+> **Milestone Limitation:** In Milestone 04, container orchestration and database health waiting are implemented. However, database persistence (SQLAlchemy 2.x session and engine lifecycle) and database schema migrations (Alembic) are scheduled for Milestone 05. Currently, the API container serves stateless endpoints (such as `/health/live` and `/docs`) and does not yet execute queries or store application records in PostgreSQL.
+
+### 4. Verification and testing commands
 
 ```bash
 # Check code style and imports

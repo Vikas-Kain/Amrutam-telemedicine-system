@@ -10,9 +10,9 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 |:---:|---|---|:---:|
 | **01** | Architecture & Project Implementation Plan | `docs: add architecture and project implementation plan` | **Completed & Committed** |
 | **02** | Bootstrap FastAPI Package & Developer Tooling | `chore: bootstrap FastAPI application and developer tooling` | **Completed & Committed** |
-| **03** | Settings, Structured Logging & API Error Handling | `feat: add application settings and structured error handling` | **Implemented (Pending Commit)** |
-| **04** | Local PostgreSQL & Docker Development | `build: add Docker Compose development environment` | *Next Up* |
-| **05** | SQLAlchemy Persistence & Alembic Migrations | `feat: add PostgreSQL persistence and Alembic migrations` | *Planned* |
+| **03** | Settings, Structured Logging & API Error Handling | `feat: add application settings and structured error handling` | **Completed & Committed** |
+| **04** | Local PostgreSQL & Docker Development | `build: add Docker Compose development environment` | **Implemented (Pending Commit)** |
+| **05** | SQLAlchemy Persistence & Alembic Migrations | `feat: add PostgreSQL persistence and Alembic migrations` | *Next Up* |
 | **06** | Core Database Models | `feat: add core telemedicine database models` | *Planned* |
 | **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | *Planned* |
 | **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | *Planned* |
@@ -361,4 +361,124 @@ Stage and commit Milestone 03:
 ```bash
 git add app/ tests/ .env.example .gitignore docs/security-checklist.md PROGRESS.md
 git commit -m "feat: add application settings and structured error handling"
+```
+
+---
+
+### Milestone 04: Local PostgreSQL & Docker Development
+- **Commit Message:** `build: add Docker Compose development environment`
+- **Scope:** Build multi-stage Dockerfile targeting Python 3.12-slim, non-root user execution, Docker Compose environment with PostgreSQL 16 Alpine and FastAPI `app`, health check probes (`pg_isready` and `/health/live`), persistent volume (`pgdata`), secret exclusion via `.dockerignore`, deferred Redis, explicit avoidance of automatic worker migrations, and documented limitations.
+
+#### What Was Implemented:
+1. **Multi-Stage Dockerfile ([Dockerfile](Dockerfile)):**
+   - **Builder stage:** Uses `python:3.12-slim-bookworm` to create isolated `/opt/venv`, installs production dependencies from `pyproject.toml` without retaining build caches (`PIP_NO_CACHE_DIR=1`).
+   - **Runtime stage:** Uses minimal `python:3.12-slim-bookworm`, installs `curl` for container health monitoring, and creates unprivileged system group `appgroup` (GID 10001) and user `appuser` (UID 10001).
+   - **Non-root execution:** Switches to `USER appuser` prior to execution.
+   - **Clean signal handling:** Launches Uvicorn as PID 1 via exec form (`CMD ["uvicorn", "app.main:app", ...]`) for clean `SIGTERM` connection draining.
+   - **Healthcheck probe:** Built-in `HEALTHCHECK` running every 30 seconds against `/health/live`.
+   - **No baked secrets:** Strict enforcement that `.env` files or credentials are never copied into the container image.
+2. **Container Build Ignore Rules ([.dockerignore](.dockerignore)):**
+   - Strictly excludes `.git`, `.venv`, `.env`, `.env.*` (while retaining `!.env.example`), local databases (`*.db`, `*.sqlite`), bytecode, test caches, docs, and test suites from Docker build context.
+3. **Local Docker Compose Environment ([docker-compose.yml](docker-compose.yml)):**
+   - **`db` service:** Runs `postgres:16-alpine`, mounts persistent volume `pgdata:/var/lib/postgresql/data`, exposes port 5432, and implements health probe `pg_isready -U $POSTGRES_USER -d $POSTGRES_DB`.
+   - **`app` service:** Builds from local `Dockerfile`, mounts `./app:/app/app:ro` for live code reload in development, and maps port 8000.
+   - **Startup synchronization:** Configures `depends_on: db: condition: service_healthy` ensuring the API worker does not start until PostgreSQL passes its readiness check.
+   - **No unsafe auto-migrations:** Does not run automatic database migrations on container startup; migrations are kept as explicit administrative operations.
+   - **Redis deferral:** Deferred Redis service container until caching or background worker milestones actually require it, keeping local resource usage minimal.
+4. **Environment Variables Template ([.env.example](.env.example)):**
+   - Documented Docker Compose PostgreSQL parameters (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`).
+5. **Automated Configuration Tests ([tests/test_container_config.py](tests/test_container_config.py)):**
+   - `test_dockerfile_exists_and_configured`: Validates Python 3.12 slim base, non-root user `appuser`, health check, and absence of secret copies.
+   - `test_dockerignore_configuration`: Validates exclusion of `.env`, `.venv`, and cache directories.
+   - `test_docker_compose_services_and_healthchecks`: Validates `db` and `app` definitions, PostgreSQL 16 image, `pg_isready` probe, `service_healthy` startup dependency, persistent volume `pgdata`, absence of unsafe migration scripts, and Redis deferral.
+6. **Milestone Limitation Transparency:**
+   - Clearly documented in [README.md](README.md) and [PROGRESS.md](PROGRESS.md) that while containerized PostgreSQL 16 and health waiting are established in Milestone 04, database persistence (SQLAlchemy engine/session lifecycle) and schema migrations (Alembic) are scheduled for Milestone 05. The API currently serves stateless endpoints (`/health/live`, `/docs`).
+
+---
+
+## Step-by-Step Verification Guide for Milestone 04
+
+Follow these instructions to verify every part of Milestone 04 locally:
+
+### Step 1: Run Ruff Linter
+Verify that all test files and source code adhere to formatting and import standards:
+```powershell
+.\.venv\Scripts\ruff check .
+```
+**Expected Output:**
+```
+All checks passed!
+```
+
+---
+
+### Step 2: Run Ruff Format Check
+Verify consistent formatting across all 34 repository files:
+```powershell
+.\.venv\Scripts\ruff format --check .
+```
+**Expected Output:**
+```
+34 files already formatted
+```
+
+---
+
+### Step 3: Run the Complete Test Suite
+Execute Pytest to run all 22 unit, API integration, and container configuration tests:
+```powershell
+.\.venv\Scripts\pytest -v
+```
+**Expected Output:**
+```
+tests/test_container_config.py::test_dockerfile_exists_and_configured PASSED    [  4%]
+tests/test_container_config.py::test_dockerignore_configuration PASSED          [  9%]
+tests/test_container_config.py::test_docker_compose_services_and_healthchecks PASSED [ 13%]
+tests/test_errors.py::test_not_found_error_response_shape PASSED                [ 18%]
+tests/test_errors.py::test_conflict_error_response_with_details PASSED          [ 22%]
+tests/test_errors.py::test_validation_error_response_shape PASSED              [ 27%]
+tests/test_errors.py::test_unhandled_exception_sanitization PASSED              [ 31%]
+tests/test_health.py::test_health_live_endpoint PASSED                         [ 36%]
+tests/test_health.py::test_api_v1_health_live_endpoint PASSED                  [ 40%]
+tests/test_health.py::test_openapi_schema_generated PASSED                     [ 45%]
+tests/test_logging.py::test_redact_sensitive_data_masks_passwords_and_tokens PASSED [ 50%]
+tests/test_logging.py::test_structured_json_formatter_output PASSED            [ 54%]
+tests/test_middleware.py::test_generated_request_id_in_response PASSED         [ 59%]
+tests/test_middleware.py::test_inbound_request_id_preserved PASSED             [ 63%]
+tests/test_middleware.py::test_inbound_correlation_id_preserved PASSED         [ 68%]
+tests/test_middleware.py::test_context_variables_cleared_after_request PASSED [ 72%]
+tests/test_settings.py::test_default_settings_instantiation PASSED             [ 77%]
+tests/test_settings.py::test_get_settings_cached_singleton PASSED              [ 81%]
+tests/test_settings.py::test_settings_environment_override PASSED              [ 86%]
+tests/test_settings.py::test_invalid_app_env_raises_validation_error PASSED    [ 90%]
+tests/test_settings.py::test_invalid_log_level_raises_validation_error PASSED [ 95%]
+tests/test_settings.py::test_short_secret_key_raises_validation_error PASSED   [100%]
+============================= 22 passed in 0.30s ==============================
+```
+
+---
+
+### Step 4: Docker Compose Runtime Verification (where Docker Engine is present)
+In an environment with Docker Engine / Docker Desktop installed:
+```powershell
+# 1. Build and start services in background
+docker compose up --build -d
+
+# 2. Check service status (both should report healthy)
+docker compose ps
+
+# 3. Test API liveness endpoint
+curl.exe http://localhost:8000/health/live
+
+# 4. Tear down containers (preserving database volume)
+docker compose down
+```
+
+---
+
+### Step 5: Create the Milestone 04 Git Commit
+Once verified, stage and commit Milestone 04:
+```bash
+git add Dockerfile .dockerignore docker-compose.yml .env.example README.md PROGRESS.md tests/test_container_config.py
+git commit -m "build: add Docker Compose development environment"
 ```
