@@ -12,9 +12,9 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **02** | Bootstrap FastAPI Package & Developer Tooling | `chore: bootstrap FastAPI application and developer tooling` | **Completed & Committed** |
 | **03** | Settings, Structured Logging & API Error Handling | `feat: add application settings and structured error handling` | **Completed & Committed** |
 | **04** | Local PostgreSQL & Docker Development | `build: add Docker Compose development environment` | **Completed & Committed** |
-| **05** | SQLAlchemy Persistence & Alembic Migrations | `feat: add PostgreSQL persistence and Alembic migrations` | **Implemented (Pending Commit)** |
-| **06** | Core Database Models | `feat: add core telemedicine database models` | *Next Up* |
-| **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | *Planned* |
+| **05** | SQLAlchemy Persistence & Alembic Migrations | `feat: add PostgreSQL persistence and Alembic migrations` | **Completed & Committed** |
+| **06** | Core Database Models | `feat: add core telemedicine database models` | **Implemented (Pending Commit)** |
+| **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | *Next Up* |
 | **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | *Planned* |
 | **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | *Planned* |
 | **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | *Planned* |
@@ -616,4 +616,121 @@ Once verified, stage and commit Milestone 05:
 ```bash
 git add pyproject.toml app/ tests/ alembic.ini alembic/ README.md PROGRESS.md
 git commit -m "feat: add PostgreSQL persistence and Alembic migrations"
+```
+
+---
+
+### Milestone 06: Core Telemedicine Database Models
+- **Commit Message:** `feat: add core telemedicine database models`
+- **Scope:** Implement SQLAlchemy 2.x declarative models and Alembic migration `0002_create_core_models` for all 11 core tables specified in [docs/data-model.md](docs/data-model.md) and [docs/diagrams/er-diagram.mmd](docs/diagrams/er-diagram.mmd). Enforce UUID primary keys, UTC timezone-aware timestamps, foreign keys with deletion rules preserving medical history, exact integer minor monetary representation, partial unique indexes preventing slot double-booking, and comprehensive model invariant tests.
+
+#### What Was Implemented:
+1. **User and Profile Models ([app/models/user.py](app/models/user.py)):**
+   - `User`: UUID primary key (`gen_random_uuid()`), normalized unique email (`email_normalized`), password hash (Argon2id), role enum (`patient`, `doctor`, `admin`), activation status, MFA fields (`mfa_enabled`, `mfa_secret_encrypted`), and UTC timestamps.
+   - `Profile`: 1-to-1 relationship with `User` (`user_id` FK on delete `CASCADE`), `full_name`, `phone`, `date_of_birth`, and UTC timestamps.
+2. **Doctor and Availability Slot Models ([app/models/doctor.py](app/models/doctor.py)):**
+   - `Doctor`: 1-to-1 relationship with `User` (`user_id` FK on delete `CASCADE`), unique `license_number`, `specialization`, verification status, integer minor unit consultation fee (`consultation_fee_minor >= 0` check constraint), currency (`INR`), bio, and UTC timestamps.
+   - `AvailabilitySlot`: doctor relationship (`doctor_id` FK on delete `CASCADE`), `start_at`, `end_at`, interval check constraint (`end_at > start_at`), status (`available`, `booked`, `blocked`), and composite index `(doctor_id, start_at, status)`.
+3. **Consultations Model ([app/models/consultation.py](app/models/consultation.py)):**
+   - `Consultation`: referential integrity to `users.id` (`patient_id` on delete `RESTRICT`), `doctors.id` (`doctor_id` on delete `RESTRICT`), and `availability_slots.id` (`slot_id` on delete `RESTRICT`).
+   - **Concurrency-Safe Atomic Booking Constraint:** Enforced partial unique index `uq_consultations_active_slot` on `slot_id WHERE status NOT IN ('cancelled')` to eliminate double-booking at the PostgreSQL database level.
+4. **Prescription and Item Models ([app/models/prescription.py](app/models/prescription.py)):**
+   - `Prescription`: unique 1-to-1 relationship with `consultations.id` on delete `RESTRICT`, referential integrity with patient and doctor on delete `RESTRICT`, clinical notes, `issued_at`, and UTC timestamps.
+   - `PrescriptionItem`: child line item entity with `prescription_id` FK on delete `CASCADE`, medicine name, dosage, route, frequency, duration, and instructions.
+5. **Payment Model ([app/models/payment.py](app/models/payment.py)):**
+   - `Payment`: associated consultation (`consultation_id` on delete `RESTRICT`), non-negative amount constraint (`amount_minor >= 0`), currency, status, provider name, and unique partial index on `provider_reference WHERE provider_reference IS NOT NULL`.
+6. **Audit and Idempotency Models ([app/models/audit.py](app/models/audit.py) & [app/models/idempotency.py](app/models/idempotency.py)):**
+   - `AuditLog`: tamper-evident log capturing `actor_user_id` (on delete `SET NULL` so audit history survives account deletion), action, resource type, resource UUID, correlation ID, and JSONB metadata.
+   - `IdempotencyKey`: tied to `users.id` on delete `CASCADE`, composite unique constraint `uq_idempotency_user_key_operation` on `(user_id, key, operation)`, request payload SHA-256 hash, execution status, response code, and JSONB response payload.
+7. **Transactional Outbox Event Model ([app/models/outbox.py](app/models/outbox.py)):**
+   - `OutboxEvent`: decoupled event publication entity storing `event_type`, `aggregate_type`, `aggregate_id`, JSONB payload, status, retry attempt counter, and error trace.
+8. **Core Alembic Migration Revision ([alembic/versions/0002_create_core_models.py](alembic/versions/0002_create_core_models.py)):**
+   - Migration chained to `0001_initial_bootstrap`.
+   - Generates full PostgreSQL DDL for all 11 tables with constraints and indexes, with clean reverse-dependency downgrade.
+9. **Automated Schema Invariant Tests ([tests/test_models.py](tests/test_models.py)):**
+   - Validates that all 11 tables are registered in `Base.metadata`.
+   - Validates UUID primary keys across all models.
+   - Validates non-cascade delete rules protecting medical and financial history (`RESTRICT` on consultations, prescriptions, payments; `SET NULL` on audit logs).
+   - Validates check constraints (`chk_doctors_fee_non_negative`, `chk_slot_time_interval`, `chk_payments_amount_non_negative`).
+   - Validates unique and partial unique indexes (`uq_consultations_active_slot`, `uq_payments_provider_reference`, `uq_idempotency_user_key_operation`).
+   - Validates Python column defaults and clean model instantiation.
+
+---
+
+## Step-by-Step Verification Guide for Milestone 06
+
+Follow these instructions to verify every part of Milestone 06 locally:
+
+### Step 1: Run Ruff Linter
+Verify code style, typing, and import ordering across all models and tests:
+```powershell
+.\.venv\Scripts\ruff check .
+```
+**Expected Output:**
+```
+All checks passed!
+```
+
+---
+
+### Step 2: Run Ruff Format Check
+Verify consistent formatting across all 51 codebase files:
+```powershell
+.\.venv\Scripts\ruff format --check .
+```
+**Expected Output:**
+```
+51 files already formatted
+```
+
+---
+
+### Step 3: Run the Complete Test Suite
+Execute Pytest across all test suites (settings, logging, middleware, health, container config, database persistence, and models):
+```powershell
+.\.venv\Scripts\pytest -v
+```
+**Expected Output:**
+```
+tests/test_container_config.py::test_dockerfile_exists_and_configured PASSED    [  2%]
+tests/test_container_config.py::test_dockerignore_configuration PASSED          [  5%]
+tests/test_container_config.py::test_docker_compose_services_and_healthchecks PASSED [  7%]
+tests/test_database.py::test_settings_database_url_and_pool_config PASSED      [ 10%]
+...
+tests/test_models.py::test_all_11_core_tables_registered_in_metadata PASSED    [ 72%]
+tests/test_models.py::test_primary_keys_are_uuid PASSED                         [ 75%]
+tests/test_models.py::test_foreign_key_delete_rules_prevent_history_erasure PASSED [ 77%]
+tests/test_models.py::test_check_constraints_defined PASSED                    [ 80%]
+tests/test_models.py::test_unique_indexes_and_partial_indexes PASSED            [ 82%]
+tests/test_models.py::test_model_column_defaults_and_instantiation PASSED      [ 85%]
+tests/test_models.py::test_live_postgres_model_operations SKIPPED (Live PostgreSQL not reachable) [ 87%]
+...
+================== 38 passed, 2 skipped, 1 warning in 4.60s ===================
+```
+
+---
+
+### Step 4: Verify Alembic Migration Head and Offline SQL Generation
+Confirm Alembic script directory recognizes revision `0002_create_core_models` as head:
+```powershell
+.\.venv\Scripts\alembic heads
+```
+**Expected Output:**
+```
+0002_create_core_models (head)
+```
+
+Generate dry-run static SQL to verify transactional PostgreSQL compilation:
+```powershell
+.\.venv\Scripts\alembic upgrade head --sql
+```
+**Verify:** Output generates `CREATE TABLE users`, `CREATE TABLE doctors`, `CREATE TABLE consultations` with `uq_consultations_active_slot`, and updates `alembic_version` to `0002_create_core_models`.
+
+---
+
+### Step 5: Create the Milestone 06 Git Commit
+Once verified, stage and commit Milestone 06:
+```bash
+git add app/ alembic/ tests/ PROGRESS.md
+git commit -m "feat: add core telemedicine database models"
 ```

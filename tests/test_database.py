@@ -174,11 +174,11 @@ def test_alembic_configuration_wired_to_settings():
     heads = script.get_heads()
 
     assert len(heads) == 1
-    assert heads[0] == "0001_initial_bootstrap"
+    assert heads[0] == "0002_create_core_models"
 
 
 def test_alembic_offline_migration_sql_generation(capsys):
-    """Verify Alembic generates clean transactional SQL for initial revision in offline mode."""
+    """Verify Alembic generates clean transactional SQL for revisions in offline mode."""
     alembic_cfg = Config("alembic.ini")
 
     command.upgrade(alembic_cfg, "head", sql=True)
@@ -186,7 +186,9 @@ def test_alembic_offline_migration_sql_generation(capsys):
 
     assert "CREATE TABLE alembic_version" in captured.out
     assert "CREATE TABLE _schema_bootstrap_probe" in captured.out
-    assert "0001_initial_bootstrap" in captured.out
+    assert "CREATE TABLE users" in captured.out
+    assert "CREATE TABLE consultations" in captured.out
+    assert "0002_create_core_models" in captured.out
 
 
 @pytest.mark.skipif(
