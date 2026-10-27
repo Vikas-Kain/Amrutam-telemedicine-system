@@ -22,9 +22,9 @@ Status definitions:
 | Idempotency key persistence prevents duplicate writes and detects payload tampering | Not started | Will be implemented in Milestone 11 |
 | Input validation with Pydantic schemas, payload limits, bounded pagination | Not started | Will be implemented in Milestones 02–10 |
 | Parameterized SQL queries via SQLAlchemy ORM (SQL injection prevention) | Not started | Will be implemented in Milestone 05 |
-| Sensitive data (passwords, tokens, MFA keys, PHI) redacted from logs/traces | Not started | Will be implemented in Milestones 03 and 22 |
-| Environment-based configuration with secrets injected via `.env` (never hardcoded) | Not started | Will be implemented in Milestone 03 |
-| `.env` excluded from version control via `.gitignore` | Not started | Will be implemented in Milestone 04 |
+| Sensitive data (passwords, tokens, MFA keys, PHI) redacted from logs/traces | Implemented | Implemented in `app/core/logging.py` (`redact_sensitive_data`, `StructuredJsonFormatter`); verified in `tests/test_logging.py` |
+| Environment-based configuration with secrets injected via `.env` (never hardcoded) | Implemented | Implemented in `app/core/config.py` (`Settings`); template provided in `.env.example`; verified in `tests/test_settings.py` |
+| `.env` excluded from version control via `.gitignore` | Implemented | Verified `.env` and `.env.*` excluded in `.gitignore` |
 | Production TLS/HTTPS termination documented | Documented only | Documented in `docs/deployment-and-recovery.md` |
 | Database encryption at rest documented for production | Documented only | Documented in `docs/deployment-and-recovery.md` |
 | Least-privilege database user credentials | Not started | Will be implemented in Milestone 04 |

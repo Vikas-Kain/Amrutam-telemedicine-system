@@ -9,9 +9,9 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | Milestone | Description | Commit Message | Status |
 |:---:|---|---|:---:|
 | **01** | Architecture & Project Implementation Plan | `docs: add architecture and project implementation plan` | **Completed & Committed** |
-| **02** | Bootstrap FastAPI Package & Developer Tooling | `chore: bootstrap FastAPI application and developer tooling` | **Implemented (Pending Commit)** |
-| **03** | Settings, Structured Logging & API Error Handling | `feat: add application settings and structured error handling` | *Next Up* |
-| **04** | Local PostgreSQL & Docker Development | `build: add Docker Compose development environment` | *Planned* |
+| **02** | Bootstrap FastAPI Package & Developer Tooling | `chore: bootstrap FastAPI application and developer tooling` | **Completed & Committed** |
+| **03** | Settings, Structured Logging & API Error Handling | `feat: add application settings and structured error handling` | **Implemented (Pending Commit)** |
+| **04** | Local PostgreSQL & Docker Development | `build: add Docker Compose development environment` | *Next Up* |
 | **05** | SQLAlchemy Persistence & Alembic Migrations | `feat: add PostgreSQL persistence and Alembic migrations` | *Planned* |
 | **06** | Core Database Models | `feat: add core telemedicine database models` | *Planned* |
 | **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | *Planned* |
@@ -201,4 +201,164 @@ Once verified, stage and commit Milestone 02:
 ```bash
 git add pyproject.toml app/ tests/ .gitignore README.md PROGRESS.md
 git commit -m "chore: bootstrap FastAPI application and developer tooling"
+```
+
+---
+
+### Milestone 03: Settings, Structured Logging & API Errors
+- **Commit Message:** `feat: add application settings and structured error handling`
+- **Scope:** Implement typed Pydantic Settings, secure structured logging with sensitive data redaction, request/correlation ID tracking middleware, standardized error envelopes, and sanitized global exception handlers.
+
+#### What Was Implemented:
+1. **Central Typed Settings ([app/core/config.py](app/core/config.py)):**
+   - Implemented `Settings(BaseSettings)` powered by `pydantic-settings`.
+   - Manages configuration for application identity, security keys (`SECRET_KEY`, `MFA_ENCRYPTION_KEY`), database connection strings, pool sizing, Redis, and log configuration.
+   - Built-in validation: Enforces allowed environments (`development`, `staging`, `production`, `test`), allowed log levels, and minimum 16-character secret key length.
+   - Cached singleton getter: `@lru_cache def get_settings() -> Settings`.
+2. **Environment Variables Template & Git Exclusion:**
+   - Created [.env.example](.env.example) documenting all available environment variables with safe development defaults and security warnings.
+   - Updated [.gitignore](.gitignore) to ensure `.env`, `.env.*`, and local database files (`*.db`, `*.sqlite`, `*.sqlite3`) are strictly excluded from source control.
+3. **Safe Structured Logging ([app/core/logging.py](app/core/logging.py)):**
+   - Implemented `StructuredJsonFormatter` emitting JSON with UTC ISO timestamp, log level, service name, environment, logger name, `request_id`, and `correlation_id`.
+   - Implemented `ConsoleFormatter` for readable local development console output.
+   - Implemented `redact_sensitive_data()`: Recursively scrubs sensitive keys (`password`, `token`, `secret`, `authorization`, `cookie`, `card`, `cvv`, `prescription`, `diagnosis`) to prevent credential or PHI leakage into logs.
+4. **Request & Correlation ID Middleware ([app/core/middleware.py](app/core/middleware.py)):**
+   - Extracts or generates `X-Request-ID` (`req_<uuid4>`) and `X-Correlation-ID`.
+   - Propagates identifiers into async `contextvars` (`request_id_ctx_var`, `correlation_id_ctx_var`) for transparent inclusion in log records without global mutable state.
+   - Injects identifiers into outgoing response headers.
+   - Logs request duration (in milliseconds) and status code safely.
+   - Guarantees context variable cleanup in `finally` block to prevent cross-request pollution.
+5. **Standardized Error Handling & Sanitization ([app/core/errors.py](app/core/errors.py) & [app/core/handlers.py](app/core/handlers.py)):**
+   - Implemented `AppException` hierarchy: `BadRequestError` (400), `UnauthorizedError` (401), `ForbiddenError` (403), `NotFoundError` (404), `ConflictError` (409), `ValidationException` (422), `ServiceUnavailableError` (503).
+   - Standardized `ErrorResponse` envelope matching `docs/api-contract.md`:
+     ```json
+     {
+       "error": {
+         "code": "ERROR_CODE",
+         "message": "Human readable message",
+         "request_id": "req_..."
+       }
+     }
+     ```
+   - Global exception handlers:
+     - `AppException`: Returns appropriate status code and formatted error payload.
+     - `RequestValidationError`: Formats Pydantic validation errors cleanly without raw bodies.
+     - `StarletteHTTPException`: Maps status codes to standard error codes.
+     - Unhandled `Exception`: Logs full stack trace internally with correlation ID, but returns a generic HTTP 500 error to the client with **zero stack traces, SQL syntax, or internal file paths**.
+6. **Automated Test Suite (19 tests):**
+   - [tests/test_settings.py](tests/test_settings.py): Tests default settings, environment overrides, and rejection of invalid environments/log levels/secret keys.
+   - [tests/test_middleware.py](tests/test_middleware.py): Tests request ID generation, header propagation, correlation ID preservation, and contextvar isolation.
+   - [tests/test_errors.py](tests/test_errors.py): Tests custom error responses (404, 409), validation errors (422), and confirms 500 crashes never leak internal details.
+   - [tests/test_logging.py](tests/test_logging.py): Tests sensitive field redaction and JSON log formatting.
+   - [tests/test_health.py](tests/test_health.py): Health probe verification.
+
+---
+
+## Step-by-Step Verification Guide for Milestone 03
+
+Follow these instructions to verify every part of Milestone 03:
+
+### Step 1: Run Ruff Linter
+Verify that all core modules, middleware, and tests adhere to code quality rules:
+```powershell
+ruff check .
+```
+**Expected Output:**
+```
+All checks passed!
+```
+
+---
+
+### Step 2: Run Ruff Format Check
+Verify consistent formatting across the codebase:
+```powershell
+ruff format --check .
+```
+**Expected Output:**
+```
+33 files already formatted
+```
+
+---
+
+### Step 3: Run the Complete Test Suite
+Execute Pytest to run all 19 unit and API integration tests:
+```powershell
+pytest -v
+```
+**Expected Output:**
+```
+tests/test_errors.py::test_not_found_error_response_shape PASSED         [  5%]
+tests/test_errors.py::test_conflict_error_response_with_details PASSED   [ 10%]
+tests/test_errors.py::test_validation_error_response_shape PASSED       [ 15%]
+tests/test_errors.py::test_unhandled_exception_sanitization PASSED       [ 21%]
+tests/test_health.py::test_health_live_endpoint PASSED                  [ 26%]
+tests/test_health.py::test_api_v1_health_live_endpoint PASSED           [ 31%]
+tests/test_health.py::test_openapi_schema_generated PASSED              [ 36%]
+tests/test_logging.py::test_redact_sensitive_data_masks_passwords_and_tokens PASSED [ 42%]
+tests/test_logging.py::test_structured_json_formatter_output PASSED     [ 47%]
+tests/test_middleware.py::test_generated_request_id_in_response PASSED  [ 52%]
+tests/test_middleware.py::test_inbound_request_id_preserved PASSED      [ 57%]
+tests/test_middleware.py::test_inbound_correlation_id_preserved PASSED  [ 63%]
+tests/test_middleware.py::test_context_variables_cleared_after_request PASSED [ 68%]
+tests/test_settings.py::test_default_settings_instantiation PASSED      [ 73%]
+tests/test_settings.py::test_get_settings_cached_singleton PASSED       [ 78%]
+tests/test_settings.py::test_settings_environment_override PASSED       [ 84%]
+tests/test_settings.py::test_invalid_app_env_raises_validation_error PASSED [ 89%]
+tests/test_settings.py::test_invalid_log_level_raises_validation_error PASSED [ 94%]
+tests/test_settings.py::test_short_secret_key_raises_validation_error PASSED [100%]
+============================= 19 passed in 0.19s =============================
+```
+
+---
+
+### Step 4: Verify Request ID Propagation & Header Inspection
+Start the development server:
+```powershell
+uvicorn app.main:app --reload
+```
+In a separate terminal, test request ID generation and custom propagation:
+```powershell
+# Case A: Auto-generated Request ID
+curl.exe -i http://127.0.0.1:8000/health/live
+
+# Case B: Inbound Custom Request ID
+curl.exe -i -H "X-Request-ID: my-custom-id-999" http://127.0.0.1:8000/health/live
+```
+**Verify:** The response headers contain:
+```http
+X-Request-ID: my-custom-id-999
+X-Correlation-ID: my-custom-id-999
+```
+
+---
+
+### Step 5: Verify Standardized 404 Error Envelope
+Send a request to a non-existent route:
+```powershell
+curl.exe -i http://127.0.0.1:8000/non-existent-route
+```
+**Expected Response:**
+```json
+HTTP/1.1 404 Not Found
+content-type: application/json
+x-request-id: req_...
+
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Not Found",
+    "request_id": "req_..."
+  }
+}
+```
+
+---
+
+### Step 6: Create the Milestone 03 Git Commit
+Stage and commit Milestone 03:
+```bash
+git add app/ tests/ .env.example .gitignore docs/security-checklist.md PROGRESS.md
+git commit -m "feat: add application settings and structured error handling"
 ```
