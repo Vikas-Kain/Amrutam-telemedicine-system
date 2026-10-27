@@ -10,7 +10,7 @@ Status definitions:
 
 | Control | Status | Evidence / notes |
 |---|---|---|
-| Passwords hashed with maintained algorithm (Argon2id) | Not started | Will be implemented in Milestone 07 |
+| Passwords hashed with maintained algorithm (Argon2id) | Implemented | Implemented in `app/core/security.py` using `argon2-cffi` (RFC 9106 / OWASP recommended parameters); verified in `tests/test_auth.py` |
 | Login and MFA authentication routes are rate-limited | Not started | Will be implemented in Milestone 20 |
 | Short-lived JWT access tokens with strict signature validation | Not started | Will be implemented in Milestone 08 |
 | TOTP multi-factor authentication (MFA) for doctor/admin roles | Not started | Will be implemented in Milestone 08 |

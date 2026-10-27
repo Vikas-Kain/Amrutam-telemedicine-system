@@ -14,8 +14,8 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **04** | Local PostgreSQL & Docker Development | `build: add Docker Compose development environment` | **Completed & Committed** |
 | **05** | SQLAlchemy Persistence & Alembic Migrations | `feat: add PostgreSQL persistence and Alembic migrations` | **Completed & Committed** |
 | **06** | Core Database Models | `feat: add core telemedicine database models` | **Implemented (Pending Commit)** |
-| **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | *Next Up* |
-| **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | *Planned* |
+| **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | **Implemented (Pending Commit)** |
+| **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | *Next Up* |
 | **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | *Planned* |
 | **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | *Planned* |
 | **11** | Idempotency Storage & Request Handling | `feat: add idempotency key persistence for write requests` | *Planned* |
@@ -734,3 +734,147 @@ Once verified, stage and commit Milestone 06:
 git add app/ alembic/ tests/ PROGRESS.md
 git commit -m "feat: add core telemedicine database models"
 ```
+
+---
+
+### Milestone 07: User Registration & Argon2 Password Hashing
+- **Commit Message:** `feat: add user registration and secure password hashing`
+- **Scope:** Implement `POST /api/v1/auth/register` for patient registration and safe profile creation. Use a maintained Argon2 password hashing library (`argon2-cffi`), normalize email consistently, validate inputs with Pydantic, and enforce unique email in PostgreSQL. Return a response schema that cannot expose password hash, MFA secret, or internal-only fields. Use one transaction for user/profile creation and return a clean conflict for duplicate email. Add unit/API tests for valid registration, duplicate email, invalid payload, rollback behavior where practical, and response redaction. Do not add login/JWT in this commit.
+
+#### What Was Implemented:
+1. **Argon2id Password Hashing & Email Normalization ([app/core/security.py](app/core/security.py)):**
+   - Implemented `hash_password()` using `argon2.PasswordHasher` configured with RFC 9106 and OWASP-recommended parameters: `time_cost=3`, `memory_cost=65536` (64 MiB), `parallelism=4`, `hash_len=32`, and `salt_len=16`.
+   - Generates distinct salted hashes on every invocation even for identical passwords.
+   - Implemented `verify_password()` with graceful error handling (`VerifyMismatchError`, `VerificationError`, `InvalidHashError`) returning a boolean without crashing or leaking details.
+   - Implemented `normalize_email()` providing lowercase transformation and whitespace stripping.
+2. **Input Validation and Redacted Response Schemas ([app/schemas/auth.py](app/schemas/auth.py)):**
+   - `UserRegisterRequest`: Validates `email` with `EmailStr` and normalizes input; enforces `password` length between 8 and 128 characters and rejects whitespace-only passwords; validates non-blank `full_name`; validates optional `phone` and `date_of_birth` (rejecting future dates).
+   - `ProfileResponse`: Serializes public profile demographic fields (`id`, `full_name`, `phone`, `date_of_birth`, UTC timestamps).
+   - `UserResponse`: Maps `email_normalized` to public API field `email` via `validation_alias`. **Strictly omits** `password_hash`, `mfa_secret_encrypted`, and internal columns.
+3. **Atomic Registration Business Service ([app/services/auth_service.py](app/services/auth_service.py)):**
+   - `register_user(session, payload)`:
+     - Pre-checks `select(User.id).where(User.email_normalized == email)` for existing accounts, returning clean `ConflictError(code="EMAIL_ALREADY_EXISTS")`.
+     - Hashes password with Argon2id prior to database entity insertion.
+     - Creates `User` with default `'patient'` role and active status.
+     - Creates child `Profile` in the same database transaction.
+     - Catches `IntegrityError` to handle concurrent duplicate email race conditions and executes immediate session rollback before raising `ConflictError`.
+     - Ensures that if profile creation fails, the entire transaction is rolled back, preventing orphaned user accounts.
+     - Logs registration success using `user_id` and `role` without leaking passwords or email PHI.
+4. **Auth Endpoints & API Router Wiring ([app/api/v1/endpoints/auth.py](app/api/v1/endpoints/auth.py) & [app/api/v1/router.py](app/api/v1/router.py)):**
+   - Implemented `POST /api/v1/auth/register` returning HTTP 201 Created on success, HTTP 409 Conflict on duplicate email, and HTTP 422 on validation failure.
+   - Mounted `auth.router` under `api_v1_router` at prefix `/auth`.
+5. **Relationship Loading Enhancement ([app/models/user.py](app/models/user.py)):**
+   - Configured `lazy="selectin"` on `User.profile` to permit clean async serialization without requiring synchronous greenlet queries.
+6. **Package Dependencies ([pyproject.toml](pyproject.toml)):**
+   - Added maintained dependencies `"argon2-cffi>=23.1.0,<24.0.0"` and `"email-validator>=2.2.0,<3.0.0"`.
+7. **Comprehensive Test Suite (16 new tests in [tests/test_auth.py](tests/test_auth.py)):**
+   - Password hashing and unique salt verification.
+   - Rejection of empty passwords and corrupt hash verification handling.
+   - Email normalization unit tests.
+   - Pydantic schema rejection for short passwords, whitespace passwords, blank names, and future dates of birth.
+   - Response redaction verification asserting `password_hash` and `mfa_secret` are never present in response JSON.
+   - Service layer test for clean user and profile persistence.
+   - Service layer test for duplicate email pre-check conflict.
+   - Service layer test for concurrent race condition rollback on `IntegrityError`.
+   - Service layer test proving transaction rollback when profile insertion fails.
+   - API integration tests via `TestClient` verifying HTTP 201, HTTP 409 with error envelope, and HTTP 422 with validation errors.
+   - Live PostgreSQL integration test for real database constraint enforcement when PostgreSQL is reachable.
+
+---
+
+## Step-by-Step Verification Guide for Milestone 07
+
+Follow these instructions to verify every part of Milestone 07 locally:
+
+### Step 1: Run Ruff Linter
+Verify code style, typing, and import ordering across all models, services, endpoints, and tests:
+```powershell
+.\.venv\Scripts\ruff check .
+```
+**Expected Output:**
+```
+All checks passed!
+```
+
+---
+
+### Step 2: Run Ruff Format Check
+Verify consistent formatting across all 58 repository files:
+```powershell
+.\.venv\Scripts\ruff format --check .
+```
+**Expected Output:**
+```
+58 files already formatted
+```
+
+---
+
+### Step 3: Run the Complete Test Suite
+Execute Pytest across all test suites:
+```powershell
+.\.venv\Scripts\pytest -v
+```
+**Expected Output:**
+```
+tests/test_auth.py::test_hash_password_produces_valid_argon2id_hash PASSED       [  1%]
+tests/test_auth.py::test_hash_password_rejects_empty PASSED                      [  3%]
+tests/test_auth.py::test_verify_password_valid_and_mismatch PASSED               [  5%]
+tests/test_auth.py::test_verify_password_handles_corrupt_hash_gracefully PASSED  [  7%]
+tests/test_auth.py::test_normalize_email PASSED                                  [  8%]
+tests/test_auth.py::test_register_request_valid_and_normalized PASSED            [ 10%]
+tests/test_auth.py::test_register_request_rejects_invalid_inputs PASSED          [ 12%]
+tests/test_auth.py::test_user_response_redaction_guarantee PASSED                [ 14%]
+tests/test_auth.py::test_register_user_service_success PASSED                   [ 16%]
+tests/test_auth.py::test_register_user_service_duplicate_email_precheck PASSED   [ 17%]
+tests/test_auth.py::test_register_user_service_integrity_error_triggers_rollback PASSED [ 19%]
+tests/test_auth.py::test_register_user_service_rollback_on_profile_creation_failure PASSED [ 21%]
+tests/test_api_register_valid_payload_returns_201_and_safe_response PASSED     [ 23%]
+tests/test_api_register_duplicate_email_returns_409_conflict PASSED             [ 25%]
+tests/test_api_register_invalid_payload_returns_422 PASSED                      [ 26%]
+tests/test_live_postgres_registration_and_uniqueness_constraint SKIPPED        [ 28%]
+...
+================== 53 passed, 3 skipped, 1 warning in 7.20s ===================
+```
+
+---
+
+### Step 4: Verify Live Endpoint Registration & Error Envelopes
+Start the development server:
+```powershell
+.\.venv\Scripts\uvicorn app.main:app --reload
+```
+
+In a separate terminal or PowerShell prompt, test the registration flow:
+
+1. **Verify OpenAPI Documentation Includes `/api/v1/auth/register`:**
+   Open browser at: `http://127.0.0.1:8000/docs`
+   Confirm `POST /api/v1/auth/register` appears with tag `auth`, request schema `UserRegisterRequest`, and response `UserResponse`.
+
+2. **Test Validation Rejection (HTTP 422):**
+   ```powershell
+   curl.exe -i -X POST http://127.0.0.1:8000/api/v1/auth/register `
+     -H "Content-Type: application/json" `
+     -d '{"email":"invalid","password":"123","full_name":""}'
+   ```
+   **Expected Response:** HTTP 422 with standardized error envelope:
+   ```json
+   {
+     "error": {
+       "code": "VALIDATION_ERROR",
+       "message": "Request validation failed.",
+       "request_id": "req_...",
+       "details": [...]
+     }
+   }
+   ```
+
+---
+
+### Step 5: Create the Milestone 07 Git Commit
+Once verified, stage and commit Milestone 07:
+```bash
+git add pyproject.toml app/ tests/ docs/security-checklist.md PROGRESS.md
+git commit -m "feat: add user registration and secure password hashing"
+```
+
