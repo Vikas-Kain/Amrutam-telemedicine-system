@@ -14,10 +14,10 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **04** | Local PostgreSQL & Docker Development | `build: add Docker Compose development environment` | **Completed & Committed** |
 | **05** | SQLAlchemy Persistence & Alembic Migrations | `feat: add PostgreSQL persistence and Alembic migrations` | **Completed & Committed** |
 | **06** | Core Database Models | `feat: add core telemedicine database models` | **Implemented (Pending Commit)** |
-| **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | **Implemented (Pending Commit)** |
-| **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | *Next Up* |
-| **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | *Planned* |
-| **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | *Planned* |
+| **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | **Completed & Committed** |
+| **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | *Planned* |
+| **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | **Implemented (Pending Commit)** |
+| **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | *Next Up* |
 | **11** | Idempotency Storage & Request Handling | `feat: add idempotency key persistence for write requests` | *Planned* |
 | **12** | Atomic, Concurrency-Safe Booking Workflow | `feat: implement atomic idempotent appointment booking` | *Planned* |
 | **13** | Booking Retrieval & Cancellation Lifecycle | `feat: add booking retrieval and cancellation lifecycle` | *Planned* |
@@ -877,4 +877,138 @@ Once verified, stage and commit Milestone 07:
 git add pyproject.toml app/ tests/ docs/security-checklist.md PROGRESS.md
 git commit -m "feat: add user registration and secure password hashing"
 ```
+
+---
+
+### Milestone 09: Doctor Profiles & Searchable Doctor Listing
+- **Commit Message:** `feat: add doctor profiles and search filters`
+- **Scope:** Implement doctor profile read/search endpoints (`GET /api/v1/doctors` and `GET /api/v1/doctors/{doctor_id}`), including bounded pagination, deterministic sorting (`created_at DESC, id DESC`) and documented filters (`specialization`, `is_verified`, `name`, and `search`). Ensure only public fields are returned according to the API contract. Redact sensitive doctor license numbers, user credentials, and personal contact details. Add API tests for filtering, pagination bounds, ordering, missing doctor (404), and sensitive data redaction. Do not implement availability slot mutations.
+
+#### What Was Implemented:
+1. **Public Doctor Schemas ([app/schemas/doctor.py](app/schemas/doctor.py)):**
+   - `DoctorPublicResponse`: Exposes only public information (`id`, `name`, `specialization`, `is_verified`, `consultation_fee_minor`, `currency`, `bio`, and UTC timestamps). **Strictly excludes** confidential license numbers, user account credentials, email, phone number, and internal identifiers.
+   - `DoctorListResponse`: Standard pagination envelope containing `items`, `total`, `page`, `page_size`, and `total_pages`.
+2. **Model Relationship Optimization ([app/models/doctor.py](app/models/doctor.py)):**
+   - Configured `lazy="selectin"` on `Doctor.user` relationship for safe, non-blocking async query loading.
+   - Added `@property def name(self) -> str` and `@property def full_name(self) -> str` to cleanly resolve the doctor's full name from `user.profile.full_name`.
+3. **Doctor Search & Retrieval Business Services ([app/services/doctor_service.py](app/services/doctor_service.py)):**
+   - `list_doctors()`:
+     - Outer-joins `Doctor` with `User` and `Profile` to support queries and name retrieval.
+     - Supports filters: `specialization` (case-insensitive substring), `is_verified` (boolean), `name` (case-insensitive substring), and general keyword `search` (matching across name, specialization, or bio).
+     - Calculates total count and total pages dynamically using an identical count query.
+     - Enforces deterministic sorting: `Doctor.created_at.desc(), Doctor.id.desc()`.
+     - Applies bounded pagination via SQL `OFFSET` and `LIMIT`.
+   - `get_doctor_by_id()`:
+     - Retrieves a single doctor by UUID with associated user and profile.
+     - Raises standard `NotFoundError("Doctor not found.", code="DOCTOR_NOT_FOUND")` when the requested doctor does not exist.
+4. **API Endpoints & Routing ([app/api/v1/endpoints/doctors.py](app/api/v1/endpoints/doctors.py) & [app/api/v1/router.py](app/api/v1/router.py)):**
+   - `GET /api/v1/doctors`: Supports search and filter parameters with strict pagination boundaries: `page >= 1` and `1 <= page_size <= 100` (rejecting queries outside these bounds with HTTP 422).
+   - `GET /api/v1/doctors/{doctor_id}`: Returns public profile for a single doctor (HTTP 200) or HTTP 404 with standardized error envelope.
+   - Mounted `doctors.router` under `api_v1_router` at prefix `/doctors`.
+5. **Requirements Traceability Update ([docs/requirements-traceability.md](docs/requirements-traceability.md)):**
+   - Marked "Search and filtering" requirement as `Implemented`.
+6. **Comprehensive Automated Test Suite (12 tests in [tests/test_doctors.py](tests/test_doctors.py)):**
+   - Schema invariant test asserting sensitive field redaction (license number, credentials, phone, email never exposed).
+   - Service unit tests for `get_doctor_by_id` (success and 404) and `list_doctors` (pagination and sorting).
+   - API integration tests via `TestClient` for:
+     - Default pagination parameters (`page=1`, `page_size=20`).
+     - Filtering by `specialization`, `is_verified`, `name`, and `search`.
+     - Strict pagination limit validation (`page_size=101` -> 422, `page_size=0` -> 422, `page=0` -> 422).
+     - Response redaction ensuring `license_number` is never present in HTTP response text.
+     - Single doctor retrieval by ID (HTTP 200).
+     - Non-existent doctor retrieval returning HTTP 404 with standard error envelope (`DOCTOR_NOT_FOUND`).
+   - Live PostgreSQL integration test for query and filtering against live PostgreSQL.
+
+---
+
+## Step-by-Step Verification Guide for Milestone 09
+
+Follow these instructions to verify every part of Milestone 09 locally:
+
+### Step 1: Run Ruff Linter
+Verify code style, typing, and import ordering across all models, services, endpoints, and tests:
+```powershell
+.\.venv\Scripts\ruff.exe check .
+```
+**Expected Output:**
+```
+All checks passed!
+```
+
+---
+
+### Step 2: Run Ruff Format Check
+Verify consistent formatting across all 62 repository files:
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+```
+**Expected Output:**
+```
+62 files already formatted
+```
+
+---
+
+### Step 3: Run the Complete Test Suite
+Execute Pytest across all test suites:
+```powershell
+.\.venv\Scripts\pytest.exe -v
+```
+**Expected Output:**
+```
+tests/test_auth.py ...............s                                      [ 23%]
+tests/test_container_config.py ...                                       [ 27%]
+tests/test_database.py ..........s                                       [ 44%]
+tests/test_doctors.py ...........s                                       [ 61%]
+tests/test_errors.py ....                                                [ 67%]
+tests/test_health.py ...                                                 [ 72%]
+tests/test_logging.py ..                                                 [ 75%]
+tests/test_middleware.py ....                                            [ 80%]
+tests/test_models.py ......s                                             [ 91%]
+tests/test_settings.py ......                                            [100%]
+================== 64 passed, 4 skipped, 1 warning in 9.30s ===================
+```
+
+---
+
+### Step 4: Verify Live Endpoints & Interactive OpenAPI Docs
+Start the local development server:
+```powershell
+.\.venv\Scripts\uvicorn.exe app.main:app --reload
+```
+
+In a second terminal or browser:
+
+1. **Verify OpenAPI Documentation:**
+   Open browser at `http://127.0.0.1:8000/docs`
+   Confirm endpoints `GET /api/v1/doctors` and `GET /api/v1/doctors/{doctor_id}` are listed with tag `doctors`.
+
+2. **Verify Doctor Listing with Default Pagination:**
+   ```powershell
+   curl.exe -i http://127.0.0.1:8000/api/v1/doctors
+   ```
+   **Expected Response:** HTTP 200 OK with `page=1`, `page_size=20`, `items=[]`, `total=0`, `total_pages=0`.
+
+3. **Verify Pagination Boundary Rejection (HTTP 422):**
+   ```powershell
+   # Request exceeding max page_size (100)
+   curl.exe -i "http://127.0.0.1:8000/api/v1/doctors?page_size=101"
+   ```
+   **Expected Response:** HTTP 422 with standardized `VALIDATION_ERROR` envelope.
+
+4. **Verify Missing Doctor Retrieval (HTTP 404):**
+   ```powershell
+   curl.exe -i http://127.0.0.1:8000/api/v1/doctors/00000000-0000-0000-0000-000000000000
+   ```
+   **Expected Response:** HTTP 404 Not Found with error code `DOCTOR_NOT_FOUND`.
+
+---
+
+### Step 5: Create the Milestone 09 Git Commit
+Once verified, stage and commit Milestone 09:
+```bash
+git add app/ tests/ docs/requirements-traceability.md PROGRESS.md
+git commit -m "feat: add doctor profiles and search filters"
+```
+
 

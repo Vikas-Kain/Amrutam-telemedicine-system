@@ -83,7 +83,7 @@ class Doctor(Base):
         CheckConstraint("consultation_fee_minor >= 0", name="chk_doctors_fee_non_negative"),
     )
 
-    user: Mapped["User"] = relationship("User", back_populates="doctor")
+    user: Mapped["User"] = relationship("User", back_populates="doctor", lazy="selectin")
     slots: Mapped[list["AvailabilitySlot"]] = relationship(
         "AvailabilitySlot",
         back_populates="doctor",
@@ -93,6 +93,18 @@ class Doctor(Base):
         "Consultation",
         back_populates="doctor",
     )
+
+    @property
+    def name(self) -> str:
+        """Return doctor's full legal name from associated profile."""
+        if self.user and self.user.profile and self.user.profile.full_name:
+            return self.user.profile.full_name
+        return ""
+
+    @property
+    def full_name(self) -> str:
+        """Alias for doctor name."""
+        return self.name
 
 
 class AvailabilitySlot(Base):
