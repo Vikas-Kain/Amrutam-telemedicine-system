@@ -32,11 +32,53 @@ This README is the initial project-level entry point. Setup placeholders below w
 - [amrutam_backend_agent_pack/prompts/COMMIT_PLAN.md](amrutam_backend_agent_pack/prompts/COMMIT_PLAN.md) — ordered milestones, prompts, and commit messages.
 
 ## Local setup
-Setup commands will be finalized after the application bootstrap and database milestones:
-1. Follow [docs/implementation-plan.md](docs/implementation-plan.md) for incremental delivery.
-2. Local runtime will require Python 3.12+, Docker Compose for PostgreSQL, and optional Redis/worker services.
-3. Secrets are managed through local `.env` files (never committed); safe defaults are provided in `.env.example`.
-4. Testing will be executed with `pytest` against an active PostgreSQL instance for concurrency and transaction validation.
+
+### Prerequisites
+- Python 3.12+ (e.g. `python --version` or `py -3.12 --version`)
+
+### 1. Virtual environment and dependency installation
+Create and activate a virtual environment, then install the package in editable mode with development dependencies:
+
+```bash
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment
+# Windows (PowerShell):
+.\.venv\Scripts\Activate.ps1
+# Windows (cmd):
+.\.venv\Scripts\activate.bat
+# Linux / macOS:
+source .venv/bin/activate
+
+# Install dependencies
+pip install -e ".[dev]"
+```
+
+### 2. Run development server
+Start the FastAPI application using Uvicorn:
+
+```bash
+uvicorn app.main:app --reload
+```
+
+- **Interactive API Documentation (Swagger UI):** `http://127.0.0.1:8000/docs`
+- **ReDoc Documentation:** `http://127.0.0.1:8000/redoc`
+- **Process Liveness Probe:** `http://127.0.0.1:8000/health/live`
+- **OpenAPI JSON Schema:** `http://127.0.0.1:8000/openapi.json`
+
+### 3. Verification and testing commands
+
+```bash
+# Check code style and imports
+ruff check .
+
+# Check formatting
+ruff format --check .
+
+# Run test suite
+pytest
+```
 
 ## Security notice
 Do not use real patient health information (PHI) or real payment credentials. This repository is an assignment implementation and must not be represented as a certified or production-operated healthcare system without formal clinical, legal, operational, and security compliance assessments.
