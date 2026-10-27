@@ -1,0 +1,41 @@
+sequenceDiagram
+    autonumber
+    actor Patient
+    participant API as FastAPI
+    participant Svc as Booking Service
+    participant DB as PostgreSQL
+    participant Worker as Outbox Worker
+
+    Patient->>API: POST /api/v1/bookings + Idempotency-Key
+    API->>API: Authenticate and validate payload
+    API->>Svc: Create booking request
+    Svc->>DB: BEGIN
+    Svc->>DB: Claim/read key + request fingerprint
+
+    alt Same key with completed identical request
+        DB-->>Svc: Stored original outcome
+        Svc-->>API: Original booking result
+        API-->>Patient: 200 OK (Original result replayed)
+    else Key conflicts or slot unavailable
+        Svc->>DB: Validate/lock slot and enforce constraints
+        DB-->>Svc: Slot already booked / payload mismatch
+        Svc->>DB: ROLLBACK
+        Svc-->>API: 409 Conflict
+        API-->>Patient: 409 Conflict error
+    else New valid booking
+        Svc->>DB: Lock/conditionally reserve available slot (SELECT FOR UPDATE)
+        Svc->>DB: Insert consultation + update slot status to booked
+        Svc->>DB: Store completed idempotency record
+        opt Deferred notification event configured
+            Svc->>DB: Insert outbox event
+        end
+        Svc->>DB: COMMIT
+        DB-->>Svc: Commit successful
+        Svc-->>API: Booking created
+        API-->>Patient: 201 Created (Booking details)
+        opt Outbox event dispatch
+            Worker->>DB: Poll and claim pending outbox event
+            Worker->>Worker: Deliver notification idempotently with bounded retries
+            Worker->>DB: Mark event processed or schedule retry
+        end
+    end

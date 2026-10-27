@@ -1,0 +1,138 @@
+erDiagram
+    USERS ||--o| PROFILES : "has"
+    USERS ||--o| DOCTORS : "represents"
+    DOCTORS ||--o{ AVAILABILITY_SLOTS : "offers"
+    USERS ||--o{ CONSULTATIONS : "books (patient)"
+    DOCTORS ||--o{ CONSULTATIONS : "conducts (doctor)"
+    AVAILABILITY_SLOTS ||--o| CONSULTATIONS : "reserved_by"
+    CONSULTATIONS ||--o| PRESCRIPTIONS : "produces"
+    PRESCRIPTIONS ||--o{ PRESCRIPTION_ITEMS : "contains"
+    CONSULTATIONS ||--o{ PAYMENTS : "has"
+    USERS ||--o{ AUDIT_LOGS : "performs"
+    USERS ||--o{ IDEMPOTENCY_KEYS : "owns"
+
+    USERS {
+        uuid id PK
+        string email_normalized UK
+        string password_hash
+        string role
+        boolean is_active
+        boolean mfa_enabled
+        string mfa_secret_encrypted
+        datetime created_at
+        datetime updated_at
+    }
+
+    PROFILES {
+        uuid id PK
+        uuid user_id FK "unique"
+        string full_name
+        string phone
+        date date_of_birth
+        datetime created_at
+        datetime updated_at
+    }
+
+    DOCTORS {
+        uuid id PK
+        uuid user_id FK "unique"
+        string specialization
+        string license_number UK
+        boolean is_verified
+        int consultation_fee_minor
+        string currency
+        text bio
+        datetime created_at
+        datetime updated_at
+    }
+
+    AVAILABILITY_SLOTS {
+        uuid id PK
+        uuid doctor_id FK
+        datetime start_at
+        datetime end_at
+        string status
+        datetime created_at
+        datetime updated_at
+    }
+
+    CONSULTATIONS {
+        uuid id PK
+        uuid patient_id FK
+        uuid doctor_id FK
+        uuid slot_id FK "unique"
+        string status
+        text reason
+        datetime created_at
+        datetime updated_at
+    }
+
+    PRESCRIPTIONS {
+        uuid id PK
+        uuid consultation_id FK "unique"
+        uuid patient_id FK
+        uuid doctor_id FK
+        text notes
+        datetime issued_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    PRESCRIPTION_ITEMS {
+        uuid id PK
+        uuid prescription_id FK
+        string medicine_name
+        string dosage
+        string route
+        string frequency
+        string duration
+        text instructions
+    }
+
+    PAYMENTS {
+        uuid id PK
+        uuid consultation_id FK
+        int amount_minor
+        string currency
+        string status
+        string provider
+        string provider_reference UK
+        datetime created_at
+        datetime updated_at
+    }
+
+    AUDIT_LOGS {
+        uuid id PK
+        uuid actor_user_id FK
+        string action
+        string resource_type
+        uuid resource_id
+        string correlation_id
+        jsonb metadata
+        datetime created_at
+    }
+
+    IDEMPOTENCY_KEYS {
+        uuid id PK
+        uuid user_id FK
+        string key
+        string operation
+        string request_hash
+        string status
+        int response_code
+        jsonb response_body
+        datetime expires_at
+        datetime created_at
+    }
+
+    OUTBOX_EVENTS {
+        uuid id PK
+        string event_type
+        string aggregate_type
+        uuid aggregate_id
+        jsonb payload
+        string status
+        int attempt_count
+        datetime created_at
+        datetime processed_at
+    }
