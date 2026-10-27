@@ -3,9 +3,8 @@
 import logging
 import time
 import uuid
-from collections.abc import Callable
 
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -21,9 +20,7 @@ class RequestCorrelationIdMiddleware(BaseHTTPMiddleware):
     headers are attached to all outbound responses.
     """
 
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Response]
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Extract existing header or generate a new unique identifier
         inbound_request_id = request.headers.get("X-Request-ID")
         request_id = inbound_request_id.strip() if inbound_request_id else f"req_{uuid.uuid4().hex}"

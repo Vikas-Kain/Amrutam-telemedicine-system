@@ -16,7 +16,7 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **06** | Core Database Models | `feat: add core telemedicine database models` | **Implemented (Pending Commit)** |
 | **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | **Completed & Committed** |
 | **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | *Planned* |
-| **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | **Implemented (Pending Commit)** |
+| **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | **Completed & Committed** |
 | **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | *Next Up* |
 | **11** | Idempotency Storage & Request Handling | `feat: add idempotency key persistence for write requests` | *Planned* |
 | **12** | Atomic, Concurrency-Safe Booking Workflow | `feat: implement atomic idempotent appointment booking` | *Planned* |
