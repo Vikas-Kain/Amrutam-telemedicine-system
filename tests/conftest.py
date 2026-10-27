@@ -1,10 +1,27 @@
 """Pytest fixtures for Amrutam API test suite."""
 
+import socket
 from collections.abc import Generator
 
 import pytest
+from app.core.config import get_settings
 from app.main import create_app
 from fastapi.testclient import TestClient
+from sqlalchemy.engine import make_url
+
+
+def is_postgres_available(url_str: str | None = None) -> bool:
+    """Check if the PostgreSQL test database is reachable via TCP socket."""
+    if url_str is None:
+        url_str = get_settings().test_database_url
+    try:
+        url = make_url(url_str)
+        host = url.host or "localhost"
+        port = url.port or 5432
+        with socket.create_connection((host, port), timeout=1.0):
+            return True
+    except (OSError, TimeoutError):
+        return False
 
 
 @pytest.fixture

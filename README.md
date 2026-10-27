@@ -65,9 +65,34 @@ uvicorn app.main:app --reload
 - **Interactive API Documentation (Swagger UI):** `http://127.0.0.1:8000/docs`
 - **ReDoc Documentation:** `http://127.0.0.1:8000/redoc`
 - **Process Liveness Probe:** `http://127.0.0.1:8000/health/live`
+- **Application Readiness Probe:** `http://127.0.0.1:8000/health/ready`
 - **OpenAPI JSON Schema:** `http://127.0.0.1:8000/openapi.json`
 
-### 3. Containerized development (Docker Compose)
+### 3. Database persistence and migrations (Alembic)
+
+Database schema migrations are managed via **Alembic** using asynchronous connections wired directly to application `Settings`.
+
+```bash
+# 1. Apply all pending migrations to target database
+alembic upgrade head
+
+# 2. Check current migration revision applied to target database
+alembic current
+
+# 3. View migration revision history
+alembic history --verbose
+
+# 4. Roll back the most recently applied migration
+alembic downgrade -1
+
+# 5. Generate dry-run static SQL without executing against database
+alembic upgrade head --sql
+
+# 6. Generate a new migration revision based on model changes
+alembic revision --autogenerate -m "revision_description"
+```
+
+### 4. Containerized development (Docker Compose)
 
 The repository provides a containerized development environment using Docker Compose with an unprivileged, multi-stage FastAPI application (`app`) and a PostgreSQL 16 database (`db`) with persistent storage and health monitoring.
 
@@ -84,8 +109,9 @@ docker compose ps
 # 4. Inspect application logs
 docker compose logs -f app
 
-# 5. Test process liveness probe
+# 5. Test process liveness and readiness probes
 curl http://localhost:8000/health/live
+curl http://localhost:8000/health/ready
 
 # 6. Stop containers (preserves database volume)
 docker compose down
@@ -94,9 +120,7 @@ docker compose down
 docker compose down -v
 ```
 
-> **Milestone Limitation:** In Milestone 04, container orchestration and database health waiting are implemented. However, database persistence (SQLAlchemy 2.x session and engine lifecycle) and database schema migrations (Alembic) are scheduled for Milestone 05. Currently, the API container serves stateless endpoints (such as `/health/live` and `/docs`) and does not yet execute queries or store application records in PostgreSQL.
-
-### 4. Verification and testing commands
+### 5. Verification and testing commands
 
 ```bash
 # Check code style and imports

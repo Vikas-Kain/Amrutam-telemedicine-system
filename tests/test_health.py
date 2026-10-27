@@ -24,3 +24,4 @@ def test_openapi_schema_generated(client: TestClient) -> None:
     schema = response.json()
     assert schema["info"]["title"] == "Amrutam Telemedicine API"
     assert "/health/live" in schema["paths"]
+    assert "/health/ready" in schema["paths"]

@@ -11,9 +11,9 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **01** | Architecture & Project Implementation Plan | `docs: add architecture and project implementation plan` | **Completed & Committed** |
 | **02** | Bootstrap FastAPI Package & Developer Tooling | `chore: bootstrap FastAPI application and developer tooling` | **Completed & Committed** |
 | **03** | Settings, Structured Logging & API Error Handling | `feat: add application settings and structured error handling` | **Completed & Committed** |
-| **04** | Local PostgreSQL & Docker Development | `build: add Docker Compose development environment` | **Implemented (Pending Commit)** |
-| **05** | SQLAlchemy Persistence & Alembic Migrations | `feat: add PostgreSQL persistence and Alembic migrations` | *Next Up* |
-| **06** | Core Database Models | `feat: add core telemedicine database models` | *Planned* |
+| **04** | Local PostgreSQL & Docker Development | `build: add Docker Compose development environment` | **Completed & Committed** |
+| **05** | SQLAlchemy Persistence & Alembic Migrations | `feat: add PostgreSQL persistence and Alembic migrations` | **Implemented (Pending Commit)** |
+| **06** | Core Database Models | `feat: add core telemedicine database models` | *Next Up* |
 | **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | *Planned* |
 | **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | *Planned* |
 | **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | *Planned* |
@@ -481,4 +481,139 @@ Once verified, stage and commit Milestone 04:
 ```bash
 git add Dockerfile .dockerignore docker-compose.yml .env.example README.md PROGRESS.md tests/test_container_config.py
 git commit -m "build: add Docker Compose development environment"
+```
+
+---
+
+### Milestone 05: SQLAlchemy Database Layer & Alembic Migrations
+- **Commit Message:** `feat: add PostgreSQL persistence and Alembic migrations`
+- **Scope:** Configure SQLAlchemy 2.x async engine, session factory, and dependency-injected session lifecycle (`get_db_session`). Set up Alembic migration environment wired to application `Settings`. Provide an application readiness probe (`/health/ready`) that verifies database connectivity without leaking credentials. Implement an initial schema bootstrap migration, configure test suites with dedicated PostgreSQL support, and provide verification commands.
+
+#### What Was Implemented:
+1. **SQLAlchemy 2.x Persistence Base ([app/db/base.py](app/db/base.py)):**
+   - Implemented standard SQLAlchemy 2.x `DeclarativeBase` subclass (`Base`) for all future domain models.
+2. **Async Engine & Session Management ([app/db/session.py](app/db/session.py)):**
+   - **Singleton Engine:** Configured `create_async_engine` using `settings.database_url`, connection pool options (`db_pool_size`, `db_max_overflow`, `db_pool_timeout`), and connection liveness pre-ping (`pool_pre_ping=True`).
+   - **Async Session Factory:** Configured `async_sessionmaker` with `expire_on_commit=False` and `autoflush=False`.
+   - **Connection Pool Disposal:** Implemented `close_database_connections()` integrated into FastAPI application `lifespan` handler for graceful resource cleanup on shutdown.
+3. **Dependency-Injected Session Lifecycle (`get_db_session`):**
+   - Implemented generator dependency yielding an `AsyncSession`.
+   - Automatically commits active transactions on successful completion.
+   - Automatically executes rollback if an unhandled exception occurs inside the handler/service.
+   - Guarantees session closure in a `finally` block to prevent connection leaks.
+4. **Database Readiness Probe ([app/api/v1/endpoints/health.py](app/api/v1/endpoints/health.py)):**
+   - Implemented `check_database_connection()`: executes lightweight `SELECT 1` with a 3.0s timeout. Catches failures and logs only the exception class without logging connection URLs or passwords.
+   - Implemented `GET /health/ready`: returns HTTP 200 `{"status": "ok", "database": "connected"}` when healthy.
+   - If database is unavailable, raises `ServiceUnavailableError`, returning standard HTTP 503 response envelope (`SERVICE_UNAVAILABLE`) with **zero connection strings, passwords, or hostnames leaked**.
+5. **Alembic Migrations Wired to Settings ([alembic.ini](alembic.ini) & [alembic/](alembic/)):**
+   - **`alembic.ini`:** Configured with dynamic URL placeholder and standard migration metadata.
+   - **`alembic/env.py`:** Configured to dynamically source database connection URLs from application `Settings` (or `-x db_url=...` / `DATABASE_URL` environment variables). Wired `target_metadata` to `Base.metadata`.
+   - **Bootstrap Migration Revision ([alembic/versions/0001_initial_bootstrap.py](alembic/versions/0001_initial_bootstrap.py)):** Minimal verification migration creating `_schema_bootstrap_probe` table with timezone-aware `created_at` timestamp and primary key, with matching clean downgrade.
+6. **Dedicated Test Suite & PostgreSQL Integration ([tests/test_database.py](tests/test_database.py) & [tests/conftest.py](tests/conftest.py)):**
+   - `test_settings_database_url_and_pool_config`: Validates asyncpg URL format and pool settings.
+   - `test_engine_initialization_singleton`: Validates engine caching and pool options.
+   - `test_session_factory_singleton`: Validates sessionmaker flags (`expire_on_commit=False`).
+   - `test_session_lifecycle_commits_on_success`: Validates auto-commit behavior on success.
+   - `test_session_lifecycle_rolls_back_on_exception`: Validates rollback behavior on exceptions.
+   - `test_check_database_connection_returns_false_on_failure`: Verifies exception catching and credential redaction.
+   - `test_health_ready_endpoint_healthy`: Verifies HTTP 200 payload.
+   - `test_health_ready_endpoint_unhealthy_returns_503_without_credentials_leak`: Verifies HTTP 503 error envelope and confirms absence of leaked connection strings.
+   - `test_alembic_configuration_wired_to_settings`: Validates migration heads and metadata wiring.
+   - `test_alembic_offline_migration_sql_generation`: Programmatically generates dry-run transactional SQL.
+   - `test_live_postgres_connectivity_and_migration`: Live PostgreSQL integration test executing against `TEST_DATABASE_URL` when PostgreSQL is active (skipped gracefully with documented reason when no PostgreSQL service is running).
+
+---
+
+## Step-by-Step Verification Guide for Milestone 05
+
+Follow these instructions to verify every part of Milestone 05 locally:
+
+### Step 1: Run Ruff Linter
+Verify code style, typing, and import ordering:
+```powershell
+.\.venv\Scripts\ruff check .
+```
+**Expected Output:**
+```
+All checks passed!
+```
+
+---
+
+### Step 2: Run Ruff Format Check
+Verify consistent formatting across all codebase files:
+```powershell
+.\.venv\Scripts\ruff format --check .
+```
+**Expected Output:**
+```
+40 files already formatted
+```
+
+---
+
+### Step 3: Run the Complete Test Suite
+Execute Pytest across all test suites:
+```powershell
+.\.venv\Scripts\pytest -v
+```
+**Expected Output:**
+```
+tests/test_container_config.py::test_dockerfile_exists_and_configured PASSED    [  3%]
+tests/test_container_config.py::test_dockerignore_configuration PASSED          [  6%]
+tests/test_container_config.py::test_docker_compose_services_and_healthchecks PASSED [  9%]
+tests/test_database.py::test_settings_database_url_and_pool_config PASSED      [ 12%]
+tests/test_database.py::test_engine_initialization_singleton PASSED            [ 15%]
+tests/test_database.py::test_session_factory_singleton PASSED                  [ 18%]
+tests/test_database.py::test_session_lifecycle_commits_on_success PASSED       [ 21%]
+tests/test_database.py::test_session_lifecycle_rolls_back_on_exception PASSED [ 24%]
+tests/test_database.py::test_check_database_connection_returns_false_on_failure PASSED [ 27%]
+tests/test_database.py::test_health_ready_endpoint_healthy PASSED              [ 30%]
+tests/test_database.py::test_health_ready_endpoint_unhealthy_returns_503_without_credentials_leak PASSED [ 33%]
+tests/test_database.py::test_alembic_configuration_wired_to_settings PASSED   [ 36%]
+tests/test_database.py::test_alembic_offline_migration_sql_generation PASSED   [ 39%]
+tests/test_database.py::test_live_postgres_connectivity_and_migration SKIPPED (Live PostgreSQL not reachable) [ 42%]
+tests/test_errors.py::test_not_found_error_response_shape PASSED                [ 45%]
+...
+================== 32 passed, 1 skipped, 1 warning in 2.50s ===================
+```
+
+---
+
+### Step 4: Verify Alembic Offline Migration SQL Generation
+Verify that Alembic generates clean transactional PostgreSQL DDL without requiring a running database:
+```powershell
+.\.venv\Scripts\alembic upgrade head --sql
+```
+**Verify:** Output begins with `BEGIN;`, defines table `_schema_bootstrap_probe`, updates `alembic_version`, and ends with `COMMIT;`.
+
+---
+
+### Step 5: Verify Application Readiness Endpoint Under Inactive DB
+Start the development server and test readiness probe behavior:
+```powershell
+# In terminal 1:
+.\.venv\Scripts\uvicorn app.main:app --reload
+
+# In terminal 2:
+curl.exe -i http://127.0.0.1:8000/health/ready
+```
+**Expected Response:** HTTP 503 Service Unavailable with JSON error envelope and no credentials:
+```json
+{
+  "error": {
+    "code": "SERVICE_UNAVAILABLE",
+    "message": "Database service is unavailable.",
+    "request_id": "req_..."
+  }
+}
+```
+
+---
+
+### Step 6: Create the Milestone 05 Git Commit
+Once verified, stage and commit Milestone 05:
+```bash
+git add pyproject.toml app/ tests/ alembic.ini alembic/ README.md PROGRESS.md
+git commit -m "feat: add PostgreSQL persistence and Alembic migrations"
 ```

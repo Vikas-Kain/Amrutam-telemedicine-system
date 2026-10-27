@@ -1,5 +1,7 @@
 """Main FastAPI application entrypoint."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.v1.endpoints import health
@@ -8,6 +10,14 @@ from app.core.config import get_settings
 from app.core.handlers import register_exception_handlers
 from app.core.logging import setup_logging
 from app.core.middleware import RequestCorrelationIdMiddleware
+from app.db.session import close_database_connections
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle application lifecycle events."""
+    yield
+    await close_database_connections()
 
 
 def create_app() -> FastAPI:
@@ -30,6 +40,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         openapi_url="/openapi.json",
         debug=settings.debug,
+        lifespan=lifespan,
     )
 
     # Middleware: Request & Correlation ID propagation
