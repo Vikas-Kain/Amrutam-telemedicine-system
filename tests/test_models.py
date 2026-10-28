@@ -120,6 +120,10 @@ def test_check_constraints_defined():
     pay_checks = [c.name for c in payments_table.constraints if isinstance(c, CheckConstraint)]
     assert "chk_payments_amount_non_negative" in pay_checks
 
+    idempotency_table = Base.metadata.tables["idempotency_keys"]
+    idemp_checks = [c.name for c in idempotency_table.constraints if isinstance(c, CheckConstraint)]
+    assert "chk_idempotency_keys_status" in idemp_checks
+
 
 def test_unique_indexes_and_partial_indexes():
     """Verify unique indexes and partial concurrency booking constraints."""
@@ -154,6 +158,8 @@ def test_unique_indexes_and_partial_indexes():
         c.name for c in idempotency_table.constraints if isinstance(c, UniqueConstraint)
     ]
     assert "uq_idempotency_user_key_operation" in idemp_unique
+    idemp_indexes = [idx.name for idx in idempotency_table.indexes]
+    assert "ix_idempotency_keys_expires_at" in idemp_indexes
 
 
 def test_model_column_defaults_and_instantiation():

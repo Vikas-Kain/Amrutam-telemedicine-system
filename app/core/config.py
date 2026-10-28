@@ -65,6 +65,15 @@ class Settings(BaseSettings):
     # Redis (Optional)
     redis_url: str = Field(default="redis://localhost:6379/0", description="Redis connection URL")
 
+    # Idempotency
+    idempotency_default_ttl_seconds: int = Field(
+        default=86400, description="Default TTL for idempotency records in seconds (24 hours)"
+    )
+    idempotency_in_progress_timeout_seconds: int = Field(
+        default=120,
+        description="Timeout threshold for orphaned in-progress idempotency keys in seconds",
+    )
+
     # CORS
     cors_origins: list[str] = Field(
         default=["http://localhost:3000", "http://127.0.0.1:3000"],

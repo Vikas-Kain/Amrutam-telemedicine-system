@@ -18,8 +18,8 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | **Implemented (Pending Commit)** |
 | **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | **Completed & Committed** |
 | **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | **Completed & Committed** |
-| **11** | Idempotency Storage & Request Handling | `feat: add idempotency key persistence for write requests` | *Next Up* |
-| **12** | Atomic, Concurrency-Safe Booking Workflow | `feat: implement atomic idempotent appointment booking` | *Planned* |
+| **11** | Idempotency Storage & Request Handling | `feat: add idempotency key persistence for write requests` | **Implemented (Pending Commit)** |
+| **12** | Atomic, Concurrency-Safe Booking Workflow | `feat: implement atomic idempotent appointment booking` | *Next Up* |
 | **13** | Booking Retrieval & Cancellation Lifecycle | `feat: add booking retrieval and cancellation lifecycle` | *Planned* |
 | **14** | Consultation Lifecycle State Machine | `feat: enforce consultation lifecycle transitions` | *Planned* |
 | **15** | Prescriptions & Item Authorization | `feat: add prescription and prescription-item workflows` | *Planned* |
@@ -1336,6 +1336,126 @@ Per `AGENTS.md`, commits are not made automatically by the agent. Review the dif
 git add alembic/ app/ tests/ docs/ PROGRESS.md
 git commit -m "feat: add doctor availability management"
 ```
+
+---
+
+### Milestone 11: Idempotency Storage & Request Handling
+- **Commit Message:** `feat: add idempotency key persistence for write requests`
+- **Scope:** Implement an idempotency service and persistence model for write operations. Scope keys to authenticated actor and operation, store a canonical request fingerprint (SHA-256), state and response/resource reference, enforce uniqueness in PostgreSQL, and define expiry/cleanup behavior. A matching completed request must replay the original outcome; same key with different payload must conflict (HTTP 409). Handle concurrent claims/unique constraint races without generic 500s or duplicate side effects. Add service/database tests, including concurrent same-key requests. Do not wire the service into booking until the next milestone, but make the interface usable and document its transaction expectations.
+
+#### What Was Implemented:
+1. **Database Migration (`alembic/versions/0004_idempotency_constraints.py`):**
+   - Added check constraint `chk_idempotency_keys_status` enforcing valid lifecycle statuses: `status IN ('in_progress', 'completed', 'failed')`.
+   - Added index `ix_idempotency_keys_expires_at` on `(expires_at)` for efficient cleanup queries.
+   - Enforced database uniqueness via existing composite unique constraint `uq_idempotency_user_key_operation` on `(user_id, key, operation)`.
+
+2. **SQLAlchemy Model Updates (`app/models/idempotency.py`):**
+   - Updated `IdempotencyKey.__table_args__` with `chk_idempotency_keys_status` and `ix_idempotency_keys_expires_at`.
+   - Maintained referential integrity with `users.id` on delete `CASCADE`.
+
+3. **Pydantic Schemas (`app/schemas/idempotency.py`):**
+   - `IdempotencyStatus`: `StrEnum` declaring lifecycle states (`in_progress`, `completed`, `failed`).
+   - `IdempotencyResult`: Immutable result model representing claim/replay state, cached status code, JSON response body, and resource UUID.
+   - `IdempotencyRecordResponse`: Inspection schema for audit and observability.
+
+4. **Business Service (`app/services/idempotency_service.py`):**
+   - `compute_request_hash`: Deterministic SHA-256 canonical fingerprinting supporting dictionaries, lists, strings, bytes, and Pydantic models with sorted keys and compact separators.
+   - `validate_idempotency_key`: Enforces presence, whitespace trimming, and 255-character upper bound.
+   - `claim_or_replay`:
+     - Checks existing record by `(user_id, key, operation)`.
+     - Detects expired keys (`expires_at <= now`) and resets them for a fresh claim.
+     - Detects payload mutations and raises `ConflictError(code="IDEMPOTENCY_PAYLOAD_MISMATCH")` (HTTP 409).
+     - Replays completed responses (`is_replayed=True`, `status="completed"`).
+     - Protects active requests (`ConflictError(code="IDEMPOTENCY_CONCURRENT_REQUEST")`), while reclaiming orphaned claims older than the timeout threshold.
+     - Uses nested transaction savepoints (`session.begin_nested()`) to atomically stage new claims; catches PostgreSQL `IntegrityError` races cleanly, rolls back the savepoint without aborting the outer transaction block, and safely inspects the winner's committed or active state.
+   - `record_success`: Transitions an in-progress record to completed with its status code, JSON body, and resource UUID.
+   - `record_failure`: Transitions an in-progress record to failed to allow subsequent user retries.
+   - `cleanup_expired_keys`: Batch pruning of expired records.
+   - `require_idempotency_key` & `optional_idempotency_key`: FastAPI header dependency extractors.
+
+5. **Settings & Configuration (`app/core/config.py` & `.env.example`):**
+   - Added `idempotency_default_ttl_seconds` (default: 86,400s / 24 hours).
+   - Added `idempotency_in_progress_timeout_seconds` (default: 120s / 2 minutes).
+
+6. **Comprehensive Test Suite (`tests/test_idempotency.py`):**
+   - 23 dedicated automated unit, service, and live PostgreSQL integration tests:
+     - Canonical fingerprinting invariance (ordering, nested structures, whitespace, Pydantic serialization).
+     - Key validation and header dependency enforcement.
+     - Single-transaction lifecycle (claim -> complete -> replay).
+     - Payload tampering rejection (HTTP 409 `IDEMPOTENCY_PAYLOAD_MISMATCH`).
+     - In-progress concurrency conflict rejection (HTTP 409 `IDEMPOTENCY_CONCURRENT_REQUEST`).
+     - Expired key reset and reclamation of abandoned in-progress records.
+     - Multi-tenant isolation (actor and operation scoping).
+     - Live PostgreSQL concurrency stress test launching simultaneous async tasks racing on the identical key, proving zero 500 crashes and zero duplicate rows.
+
+7. **Documentation Updates:**
+   - Updated `docs/security-checklist.md` marking idempotency persistence control as implemented.
+   - Updated `docs/requirements-traceability.md` tracking Milestone 11 completion.
+   - Documented Single-Transaction and Two-Phase Transaction lifecycle patterns in `app/services/idempotency_service.py`.
+
+---
+
+## Milestone 11 Verification Guide
+
+### Step 1: Run Linting and Formatting
+```powershell
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\ruff.exe format --check .
+```
+**Expected Output:**
+```
+All checks passed!
+71 files already formatted
+```
+
+---
+
+### Step 2: Run the Full Automated Test Suite
+```powershell
+.\.venv\Scripts\pytest.exe -v
+```
+**Expected Output:**
+```
+collected 137 items
+
+tests\test_auth.py .......................................               [ 28%]
+tests\test_availability.py .......................                       [ 45%]
+tests\test_container_config.py ...                                       [ 47%]
+tests\test_database.py ...........                                       [ 55%]
+tests\test_doctors.py ............                                       [ 64%]
+tests\test_errors.py ....                                                [ 67%]
+tests\test_health.py ...                                                 [ 69%]
+tests\test_idempotency.py .......................                        [ 86%]
+tests\test_logging.py ..                                                 [ 87%]
+tests\test_middleware.py ....                                            [ 90%]
+tests\test_models.py .......                                             [ 95%]
+tests\test_settings.py ......                                            [100%]
+
+======================= 137 passed, 1 warning in 3.41s ========================
+```
+
+---
+
+### Step 3: Run Database Migrations on Live PostgreSQL
+```powershell
+.\.venv\Scripts\alembic.exe upgrade head
+```
+**Expected Output:**
+```
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+0004_idempotency_constraints (head)
+```
+
+---
+
+### Step 4: Suggested Git Commit Command
+Per `AGENTS.md`, commits are not made automatically by the agent. Review the diff and execute:
+```bash
+git add alembic/ app/ tests/ docs/ .env.example PROGRESS.md
+git commit -m "feat: add idempotency key persistence for write requests"
+```
+
 
 
 

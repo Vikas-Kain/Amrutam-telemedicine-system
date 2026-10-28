@@ -6,8 +6,10 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     JSON,
+    CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -60,6 +62,11 @@ class IdempotencyKey(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "key", "operation", name="uq_idempotency_user_key_operation"),
+        CheckConstraint(
+            "status IN ('in_progress', 'completed', 'failed')",
+            name="chk_idempotency_keys_status",
+        ),
+        Index("ix_idempotency_keys_expires_at", "expires_at"),
     )
 
     user: Mapped["User"] = relationship("User")

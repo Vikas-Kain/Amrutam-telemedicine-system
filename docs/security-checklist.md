@@ -19,7 +19,7 @@ Status definitions:
 | Resource ownership and doctor assignment checked on sensitive ops (no IDOR) | Not started | Will be implemented in Milestones 09–15 |
 | Cross-patient data isolation (patients cannot access other patients' records) | Not started | Will be implemented in Milestones 13–15 |
 | Atomic, concurrency-safe appointment booking (`SELECT FOR UPDATE` + constraints) | Not started | Will be implemented in Milestone 12 |
-| Idempotency key persistence prevents duplicate writes and detects payload tampering | Not started | Will be implemented in Milestone 11 |
+| Idempotency key persistence prevents duplicate writes and detects payload tampering | Implemented | Implemented in `app/services/idempotency_service.py` with canonical SHA-256 fingerprinting, PostgreSQL unique constraint `uq_idempotency_user_key_operation`, nested savepoints for race handling, replay of completed outcomes, and 409 conflict on payload mismatch or active concurrent execution; verified in `tests/test_idempotency.py` |
 | Input validation with Pydantic schemas, payload limits, bounded pagination | Not started | Will be implemented in Milestones 02–10 |
 | Parameterized SQL queries via SQLAlchemy ORM (SQL injection prevention) | Not started | Will be implemented in Milestone 05 |
 | Sensitive data (passwords, tokens, MFA keys, PHI) redacted from logs/traces | Implemented | Implemented in `app/core/logging.py` (`redact_sensitive_data`, `StructuredJsonFormatter`); verified in `tests/test_logging.py` |
