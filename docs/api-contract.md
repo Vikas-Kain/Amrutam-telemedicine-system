@@ -87,9 +87,25 @@ Any transition outside this matrix (e.g. `booked` → `completed` or transitioni
 
 | Method | Path | Access | Description |
 |---|---|---|---|
-| POST | `/api/v1/consultations/{id}/prescriptions` | Assigned Doctor | Create prescription with line items for a consultation |
-| GET | `/api/v1/consultations/{id}/prescription` | Patient / Assigned Doctor | Retrieve prescription for a consultation |
+| POST | `/api/v1/consultations/{id}/prescriptions` | Assigned Doctor | Create or amend prescription with line items for an eligible consultation |
+| PUT | `/api/v1/consultations/{id}/prescriptions` | Assigned Doctor | Amend prescription line items and increment version |
+| GET | `/api/v1/consultations/{id}/prescription` | Patient / Assigned Doctor / Admin | Retrieve prescription for a consultation |
 | GET | `/api/v1/prescriptions/{id}` | Patient / Issuing Doctor / Admin | Retrieve prescription by its direct ID |
+
+Prescription creation and amendment require an authenticated doctor who is assigned to the consultation.
+The consultation must be in an eligible state (`in_progress` or `completed`); attempting to issue a prescription
+for `booked`, `confirmed`, `cancelled`, or `no_show` consultations returns `409 Conflict`.
+
+Each prescription contains optional clinical `notes` and a non-empty list of structured line items (`items`), where each item validates:
+- `medicine_name`: Non-blank string (1–255 chars)
+- `dosage`: Non-blank dosage specification (1–64 chars, e.g. `500mg`, `10ml`)
+- `route`: Administration route (1–64 chars, e.g. `oral`, `topical`, `nasal`)
+- `frequency`: Intake frequency (1–64 chars, e.g. `twice daily`)
+- `duration`: Course duration (1–64 chars, e.g. `5 days`, `2 weeks`)
+- `instructions`: Optional patient instructions (up to 2,000 chars)
+
+Creating a prescription initializes `version = 1`. Amending an existing prescription increments `version` and atomically replaces line items within the same transaction. Prescription contents (medication names, dosages, instructions) are **never** logged to audit trails or outbox event payloads; only resource identifiers, version counters, and item counts are recorded.
+
 
 ## 5. Payments (`/consultations/{id}/payments`, `/payments`)
 

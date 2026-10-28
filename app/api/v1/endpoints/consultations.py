@@ -19,6 +19,7 @@ from app.schemas.consultation import (
     ConsultationResponse,
     ConsultationStatus,
 )
+from app.schemas.prescription import PrescriptionCreate, PrescriptionResponse
 from app.services.booking_service import cancel_booking
 from app.services.consultation_service import (
     get_consultation,
@@ -26,6 +27,10 @@ from app.services.consultation_service import (
     transition_consultation,
 )
 from app.services.idempotency_service import require_idempotency_key
+from app.services.prescription_service import (
+    get_prescription_by_consultation,
+    issue_or_amend_prescription,
+)
 
 router = APIRouter()
 
@@ -254,3 +259,95 @@ async def cancel_consultation_endpoint(
         idempotency_key=idempotency_key,
     )
     return ConsultationResponse.model_validate(result.booking)
+
+
+@router.post(
+    "/{consultation_id}/prescriptions",
+    response_model=PrescriptionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Issue or amend prescription for an eligible consultation",
+    description=(
+        "Issues a medical prescription with structured line items. Only the doctor assigned "
+        "to the consultation may issue or amend a prescription. Consultations must be in "
+        "'in_progress' or 'completed' status. Creates prescription and items atomically."
+    ),
+    responses={
+        400: {"description": "Validation error in structured items."},
+        401: {"description": "Authentication credentials missing or invalid."},
+        403: {"description": "Caller is not the assigned doctor."},
+        404: {"description": "Consultation was not found."},
+        409: {"description": "Consultation is not in an eligible status."},
+    },
+)
+async def create_prescription_endpoint(
+    consultation_id: uuid.UUID,
+    payload: PrescriptionCreate,
+    current_user: Annotated[User, Depends(require_doctor)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PrescriptionResponse:
+    """Create a new prescription or amend existing for the given consultation."""
+    return await issue_or_amend_prescription(
+        session=session,
+        consultation_id=consultation_id,
+        payload=payload,
+        current_user=current_user,
+    )
+
+
+@router.put(
+    "/{consultation_id}/prescriptions",
+    response_model=PrescriptionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Amend an existing prescription",
+    description=(
+        "Corrects or amends an issued prescription. Increments the version counter and "
+        "atomically updates medication items. Restricted to the assigned doctor."
+    ),
+    responses={
+        400: {"description": "Validation error in structured items."},
+        401: {"description": "Authentication credentials missing or invalid."},
+        403: {"description": "Caller is not the assigned doctor."},
+        404: {"description": "Consultation was not found."},
+        409: {"description": "Consultation is not in an eligible status."},
+    },
+)
+async def amend_prescription_endpoint(
+    consultation_id: uuid.UUID,
+    payload: PrescriptionCreate,
+    current_user: Annotated[User, Depends(require_doctor)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PrescriptionResponse:
+    """Amend an existing prescription for the consultation."""
+    return await issue_or_amend_prescription(
+        session=session,
+        consultation_id=consultation_id,
+        payload=payload,
+        current_user=current_user,
+    )
+
+
+@router.get(
+    "/{consultation_id}/prescription",
+    response_model=PrescriptionResponse,
+    summary="Retrieve the prescription for a consultation",
+    description=(
+        "Returns the prescription issued for a consultation. Accessible only to the "
+        "patient recipient, the assigned doctor, or an administrator."
+    ),
+    responses={
+        401: {"description": "Authentication credentials missing or invalid."},
+        403: {"description": "Caller lacks permission to view this prescription."},
+        404: {"description": "Consultation or prescription not found."},
+    },
+)
+async def get_consultation_prescription_endpoint(
+    consultation_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PrescriptionResponse:
+    """Retrieve prescription by consultation ID."""
+    return await get_prescription_by_consultation(
+        session=session,
+        consultation_id=consultation_id,
+        current_user=current_user,
+    )

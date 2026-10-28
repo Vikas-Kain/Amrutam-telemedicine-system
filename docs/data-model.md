@@ -74,6 +74,7 @@ This document specifies the logical data model for the Amrutam Telemedicine Back
 - `patient_id`: UUID, non-null, foreign key to `users.id`.
 - `doctor_id`: UUID, non-null, foreign key to `doctors.id`.
 - `notes`: TEXT, nullable.
+- `version`: INTEGER, non-null, default `1`. Incremented atomically on each prescription amendment.
 - `issued_at`: TIMESTAMPTZ, non-null.
 - `created_at`, `updated_at`: TIMESTAMPTZ, non-null.
 

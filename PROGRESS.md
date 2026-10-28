@@ -22,8 +22,8 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **12** | Atomic, Concurrency-Safe Booking Workflow | `feat: implement atomic idempotent appointment booking` | **Completed & Committed** |
 | **13** | Booking Retrieval & Cancellation Lifecycle | `feat: add booking retrieval and cancellation lifecycle` | **Implemented (Pending Commit)** |
 | **14** | Consultation Lifecycle State Machine | `feat: enforce consultation lifecycle transitions` | **Implemented (Pending Commit)** |
-| **15** | Prescriptions & Item Authorization | `feat: add prescription and prescription-item workflows` | *Next Up* |
-| **16** | Payment Lifecycle & Mock Provider Adapter | `feat: add payment lifecycle with mock provider adapter` | *Planned* |
+| **15** | Prescriptions & Item Authorization | `feat: add prescription and prescription-item workflows` | **Implemented (Pending Commit)** |
+| **16** | Payment Lifecycle & Mock Provider Adapter | `feat: add payment lifecycle with mock provider adapter` | *Next Up* |
 | **17** | Audit Logging for Sensitive Operations | `feat: add audit logging for sensitive operations` | *Planned* |
 | **18** | Aggregate Admin Analytics | `feat: add aggregate admin analytics` | *Planned* |
 | **19** | Background Jobs & Transactional Outbox | `feat: add background jobs and transactional outbox` | *Planned* |
@@ -1593,5 +1593,59 @@ Per `AGENTS.md`, no commit was created. Review the diff, then run:
 git add alembic/ app/ tests/ docs/ PROGRESS.md
 git commit -m "feat: enforce consultation lifecycle transitions"
 ```
+
+---
+
+## Milestone 15: Prescription workflows and access control
+
+**Status:** Implemented and verified on local PostgreSQL.
+
+- Created Alembic migration `0007_prescription_version.py` adding `version` column (INTEGER, default 1) to `prescriptions`
+  table for tracking amendments and correction history.
+- Created `app/schemas/prescription.py` defining `PrescriptionItemCreate` (with non-blank string validators for medicine
+  name, dosage, route, frequency, duration), `PrescriptionCreate`, `PrescriptionItemResponse`, and `PrescriptionResponse`.
+- Implemented `app/services/prescription_service.py` providing:
+  - `issue_or_amend_prescription`: Enforces that only the doctor assigned to an eligible consultation (`in_progress`
+    or `completed`) may issue or amend a prescription. Issues version 1 on creation; increments version counter and
+    atomically replaces line items on amendment. Enqueues `OutboxEvent` (`prescription.issued` / `prescription.amended`)
+    and records `AuditLog` (`prescription.create` / `prescription.amend`). Medication names and dosages are strictly
+    redacted from audit metadata and outbox payloads.
+  - `get_prescription_by_consultation` and `get_prescription_by_id`: Strictly enforces authorization: accessible only
+    to the patient recipient, the issuing/assigned doctor, or an administrator.
+- Implemented API endpoints:
+  - `POST /api/v1/consultations/{id}/prescriptions`: Create or amend prescription (Assigned Doctor)
+  - `PUT /api/v1/consultations/{id}/prescriptions`: Explicit amendment route (Assigned Doctor)
+  - `GET /api/v1/consultations/{id}/prescription`: Get consultation prescription (Patient / Assigned Doctor / Admin)
+  - `GET /api/v1/prescriptions/{id}`: Direct prescription retrieval (Patient / Issuing Doctor / Admin)
+- Added `tests/test_prescriptions.py` with 13 automated tests covering:
+  - Valid issuance flow with structured medication items.
+  - Amendment flow with version increment and atomic line item replacement.
+  - Rejection of ineligible consultation states (`booked`, `confirmed`, `cancelled`, `no_show`).
+  - Access control: rejection of unassigned doctors and cross-patient access.
+  - Schema validation for non-blank items and minimum 1 item constraint.
+  - Clinical detail redaction from audit logs and outbox events.
+  - Live PostgreSQL integration testing atomic persistence, amendment, and transaction rollback.
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\pytest.exe tests/test_prescriptions.py -v
+.\.venv\Scripts\pytest.exe -v
+```
+
+All commands passed (197 total tests).
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add alembic/ app/ tests/ docs/ PROGRESS.md
+git commit -m "feat: add prescription and prescription-item workflows"
+```
+
 
 
