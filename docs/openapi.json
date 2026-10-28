@@ -1,0 +1,4241 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Amrutam Telemedicine API",
+    "description": "Backend services for the Amrutam Telemedicine platform.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health/live": {
+      "get": {
+        "summary": "Process Liveness Check",
+        "description": "Returns 200 when the application process is running and responding to requests.",
+        "operationId": "liveness_probe_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LivenessResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "summary": "Application Readiness Probe",
+        "description": "Returns 200 when all core dependencies (PostgreSQL, Redis if configured) are connected and accepting traffic.",
+        "operationId": "readiness_probe_health_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database or dependency is unavailable",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "Database service is unavailable.",
+                    "request_id": "req_..."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus text metrics exposition",
+        "description": "Exposes application, HTTP, database connection pool, and business metrics in standard Prometheus text format (version=0.0.4). Labels are strictly low-cardinality.",
+        "operationId": "get_prometheus_metrics_metrics_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Metrics-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Metrics-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prometheus metric exposition data.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/plain": {}
+            }
+          },
+          "401": {
+            "description": "Metrics access token required or invalid."
+          },
+          "404": {
+            "description": "Metrics endpoint is disabled."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health/live": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Process Liveness Check",
+        "description": "Returns 200 when the application process is running and responding to requests.",
+        "operationId": "liveness_probe_api_v1_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LivenessResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Application Readiness Probe",
+        "description": "Returns 200 when all core dependencies (PostgreSQL, Redis if configured) are connected and accepting traffic.",
+        "operationId": "readiness_probe_api_v1_health_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database or dependency is unavailable",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "Database service is unavailable.",
+                    "request_id": "req_..."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/metrics": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Prometheus text metrics exposition",
+        "description": "Exposes application, HTTP, database connection pool, and business metrics in standard Prometheus text format (version=0.0.4). Labels are strictly low-cardinality.",
+        "operationId": "get_prometheus_metrics_api_v1_metrics_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Metrics-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Metrics-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prometheus metric exposition data.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/plain": {}
+            }
+          },
+          "401": {
+            "description": "Metrics access token required or invalid."
+          },
+          "404": {
+            "description": "Metrics endpoint is disabled."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Register a new patient account",
+        "description": "Registers a new patient account and associated profile in a single atomic transaction. Enforces consistent email normalization and unique email constraints. Returns a sanitized profile response with password and secrets excluded.",
+        "operationId": "register_patient_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "User account and profile successfully created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email address already registered.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "EMAIL_ALREADY_EXISTS",
+                    "message": "A user with this email address already exists.",
+                    "request_id": "req_01j9a4k7..."
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request validation failed."
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Authenticate user and issue access token",
+        "description": "Authenticates a user using normalized email and password. Upon successful verification, returns a signed JWT access token with short expiry. Never exposes password hash, raw tokens in logs, or specific error details that allow enumeration.",
+        "operationId": "login_user_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "User successfully authenticated; access token returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials provided."
+          },
+          "403": {
+            "description": "User account is inactive."
+          },
+          "422": {
+            "description": "Request payload validation failed."
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Retrieve current authenticated user profile",
+        "description": "Retrieves account and demographic profile information for the authenticated user. Requires a valid Bearer access token. Sensitive credentials and secrets are excluded.",
+        "operationId": "get_me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Current user profile information.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication token missing, invalid, or expired."
+          },
+          "403": {
+            "description": "User account is inactive."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/doctors": {
+      "get": {
+        "tags": [
+          "doctors"
+        ],
+        "summary": "Search and list doctor profiles",
+        "description": "Retrieves a paginated list of public doctor profiles with deterministic sorting (created_at DESC, id DESC). Supports filtering by specialization, name, and verification status. Strictly bounded to a maximum of 100 items per page. Sensitive data is redacted.",
+        "operationId": "list_doctors_endpoint_api_v1_doctors_get",
+        "parameters": [
+          {
+            "name": "specialization",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by area of specialization (case-insensitive substring)",
+              "title": "Specialization"
+            },
+            "description": "Filter by area of specialization (case-insensitive substring)"
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by doctor full legal name (case-insensitive substring)",
+              "title": "Name"
+            },
+            "description": "Filter by doctor full legal name (case-insensitive substring)"
+          },
+          {
+            "name": "is_verified",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by doctor verification status",
+              "title": "Is Verified"
+            },
+            "description": "Filter by doctor verification status"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "General keyword search matching name, specialization, or bio",
+              "title": "Search"
+            },
+            "description": "General keyword search matching name, specialization, or bio"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed, minimum 1)",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed, minimum 1)"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Items per page (minimum 1, maximum 100)",
+              "default": 20,
+              "title": "Page Size"
+            },
+            "description": "Items per page (minimum 1, maximum 100)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of matching doctor profiles.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoctorListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid pagination parameters or query formatting."
+          }
+        }
+      }
+    },
+    "/api/v1/doctors/me/slots": {
+      "post": {
+        "tags": [
+          "doctors"
+        ],
+        "summary": "Create doctor availability slots",
+        "description": "Creates one or more availability time slots for the authenticated doctor. Enforces rejection of past intervals, internal overlaps within the request batch, and database-level overlap constraints against existing slots.",
+        "operationId": "create_doctor_slots_endpoint_api_v1_doctors_me_slots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SlotBatchCreateRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SlotCreateRequest"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Availability slots successfully created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SlotResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Create Doctor Slots Endpoint Api V1 Doctors Me Slots Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid time interval or slot in the past."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller does not hold the doctor role."
+          },
+          "404": {
+            "description": "Doctor profile not found for authenticated user."
+          },
+          "409": {
+            "description": "Slot interval overlaps with an existing slot."
+          },
+          "422": {
+            "description": "Request schema validation failed."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/doctors/me/slots/{slot_id}": {
+      "patch": {
+        "tags": [
+          "doctors"
+        ],
+        "summary": "Update doctor availability slot",
+        "description": "Updates an unbooked availability slot interval or changes its status ('available' / 'blocked'). Enforces ownership (only owning doctor or admin can modify) and guarantees that booked slots cannot be edited.",
+        "operationId": "update_doctor_slot_endpoint_api_v1_doctors_me_slots__slot_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Slot Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlotUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Availability slot updated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid time interval or update in the past."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller lacks permission to modify this slot."
+          },
+          "404": {
+            "description": "Availability slot not found."
+          },
+          "409": {
+            "description": "Slot is already booked or overlaps with an existing slot."
+          },
+          "422": {
+            "description": "Request schema validation failed."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "doctors"
+        ],
+        "summary": "Delete doctor availability slot",
+        "description": "Deletes an unbooked availability slot. Enforces ownership (only owning doctor or admin can delete) and guarantees that booked slots cannot be deleted.",
+        "operationId": "delete_doctor_slot_endpoint_api_v1_doctors_me_slots__slot_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Slot Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Availability slot deleted successfully."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller lacks permission to delete this slot."
+          },
+          "404": {
+            "description": "Availability slot not found."
+          },
+          "409": {
+            "description": "Slot is already booked and cannot be deleted."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/doctors/{doctor_id}": {
+      "get": {
+        "tags": [
+          "doctors"
+        ],
+        "summary": "Retrieve doctor public profile",
+        "description": "Retrieves public professional details and consultation fee for a specific doctor. Sensitive information including license numbers, credentials, and contact details are strictly redacted.",
+        "operationId": "get_doctor_endpoint_api_v1_doctors__doctor_id__get",
+        "parameters": [
+          {
+            "name": "doctor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Doctor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Doctor public profile details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoctorPublicResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Doctor not found.",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "DOCTOR_NOT_FOUND",
+                    "message": "Doctor not found.",
+                    "request_id": "req_01j9a4k7..."
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/doctors/{doctor_id}/slots": {
+      "get": {
+        "tags": [
+          "doctors"
+        ],
+        "summary": "List doctor availability slots",
+        "description": "Retrieves availability slots for a doctor with optional date range and status filters. Defaults to returning available future slots in chronological order.",
+        "operationId": "list_doctor_slots_endpoint_api_v1_doctors__doctor_id__slots_get",
+        "parameters": [
+          {
+            "name": "doctor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Doctor Id"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter slots ending on or after timestamp (UTC)",
+              "title": "Date From"
+            },
+            "description": "Filter slots ending on or after timestamp (UTC)"
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter slots starting on or before timestamp (UTC)",
+              "title": "Date To"
+            },
+            "description": "Filter slots starting on or before timestamp (UTC)"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by slot status (e.g. 'available', 'blocked')",
+              "default": "available",
+              "title": "Status"
+            },
+            "description": "Filter by slot status (e.g. 'available', 'blocked')"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of doctor availability slots.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Doctor not found."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bookings": {
+      "post": {
+        "tags": [
+          "bookings"
+        ],
+        "summary": "Atomically reserve an availability slot",
+        "description": "Reserves an available doctor slot and creates a consultation within one PostgreSQL transaction. A patient identity and Idempotency-Key header are required. Matching completed retries replay the original booking with HTTP 200.",
+        "operationId": "create_booking_endpoint_api_v1_bookings_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Unique request key to guarantee at-most-once execution",
+              "title": "Idempotency-Key"
+            },
+            "description": "Unique request key to guarantee at-most-once execution"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Original completed booking replayed."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not a patient."
+          },
+          "404": {
+            "description": "Availability slot was not found."
+          },
+          "409": {
+            "description": "Idempotency, doctor-slot, or availability conflict."
+          },
+          "400": {
+            "description": "The Idempotency-Key header was missing or invalid."
+          },
+          "422": {
+            "description": "Request schema validation failed."
+          }
+        }
+      }
+    },
+    "/api/v1/bookings/{booking_id}": {
+      "get": {
+        "tags": [
+          "bookings"
+        ],
+        "summary": "Retrieve an authorized booking",
+        "description": "Retrieve a booking subject to patient ownership or doctor assignment policy.",
+        "operationId": "get_booking_endpoint_api_v1_bookings__booking_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booking_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booking Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not the patient, assigned doctor, or an administrator."
+          },
+          "404": {
+            "description": "Booking was not found."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bookings/{booking_id}/cancel": {
+      "post": {
+        "tags": [
+          "bookings"
+        ],
+        "summary": "Cancel an eligible booking and release its slot",
+        "description": "Patients may cancel only their own future bookings that remain in the booked state; administrators may perform the same operational action. The cancelled consultation is retained and its slot becomes available atomically.",
+        "operationId": "cancel_booking_endpoint_api_v1_bookings__booking_id__cancel_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booking_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Booking Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Unique request key to guarantee at-most-once execution",
+              "title": "Idempotency-Key"
+            },
+            "description": "Unique request key to guarantee at-most-once execution"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The Idempotency-Key header was missing or invalid."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not the patient owner or an administrator."
+          },
+          "404": {
+            "description": "Booking was not found."
+          },
+          "409": {
+            "description": "Booking cannot be cancelled in its current state."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations": {
+      "get": {
+        "tags": [
+          "consultations"
+        ],
+        "summary": "List consultations scoped to caller identity",
+        "description": "Returns a paginated list of consultations strictly filtered by the authenticated user's role: patients only see their own appointments, doctors only see their assigned consultations, and administrators can view all or filter by patient/doctor.",
+        "operationId": "list_consultations_endpoint_api_v1_consultations_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by status (e.g. booked, confirmed, in_progress, completed)",
+              "title": "Status"
+            },
+            "description": "Filter by status (e.g. booked, confirmed, in_progress, completed)"
+          },
+          {
+            "name": "patient_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by patient ID (admin only)",
+              "title": "Patient Id"
+            },
+            "description": "Filter by patient ID (admin only)"
+          },
+          {
+            "name": "doctor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by doctor ID (admin only)",
+              "title": "Doctor Id"
+            },
+            "description": "Filter by doctor ID (admin only)"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed)",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Results per page (max 100)",
+              "default": 20,
+              "title": "Page Size"
+            },
+            "description": "Results per page (max 100)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsultationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters or status filter."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller lacks permission to list consultations."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{consultation_id}": {
+      "get": {
+        "tags": [
+          "consultations"
+        ],
+        "summary": "Retrieve an authorized consultation",
+        "description": "Retrieve consultation detail subject to patient ownership or doctor assignment.",
+        "operationId": "get_consultation_endpoint_api_v1_consultations__consultation_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "consultation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Consultation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsultationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not the patient, assigned doctor, or an administrator."
+          },
+          "404": {
+            "description": "Consultation was not found."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{consultation_id}/confirm": {
+      "post": {
+        "tags": [
+          "consultations"
+        ],
+        "summary": "Confirm an appointment (booked -> confirmed)",
+        "description": "Transition consultation status from 'booked' to 'confirmed'. Only the assigned doctor or an administrator can confirm the appointment.",
+        "operationId": "confirm_consultation_endpoint_api_v1_consultations__consultation_id__confirm_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "consultation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Consultation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsultationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not the assigned doctor or administrator."
+          },
+          "404": {
+            "description": "Consultation was not found."
+          },
+          "409": {
+            "description": "Consultation is not in 'booked' state."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{consultation_id}/start": {
+      "post": {
+        "tags": [
+          "consultations"
+        ],
+        "summary": "Begin consultation (confirmed -> in_progress)",
+        "description": "Transition consultation status from 'confirmed' to 'in_progress'. Only the assigned doctor can start the consultation session.",
+        "operationId": "start_consultation_endpoint_api_v1_consultations__consultation_id__start_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "consultation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Consultation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsultationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not the assigned doctor."
+          },
+          "404": {
+            "description": "Consultation was not found."
+          },
+          "409": {
+            "description": "Consultation is not in 'confirmed' state."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{consultation_id}/complete": {
+      "post": {
+        "tags": [
+          "consultations"
+        ],
+        "summary": "Complete consultation (in_progress -> completed)",
+        "description": "Transition consultation status from 'in_progress' to 'completed'. Only the assigned doctor can mark the consultation complete.",
+        "operationId": "complete_consultation_endpoint_api_v1_consultations__consultation_id__complete_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "consultation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Consultation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsultationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not the assigned doctor."
+          },
+          "404": {
+            "description": "Consultation was not found."
+          },
+          "409": {
+            "description": "Consultation is not in 'in_progress' state."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{consultation_id}/no-show": {
+      "post": {
+        "tags": [
+          "consultations"
+        ],
+        "summary": "Mark patient no-show (confirmed -> no_show)",
+        "description": "Transition consultation status from 'confirmed' to 'no_show'. Only the assigned doctor or an administrator can record a patient no-show.",
+        "operationId": "mark_no_show_endpoint_api_v1_consultations__consultation_id__no_show_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "consultation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Consultation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsultationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not the assigned doctor or administrator."
+          },
+          "404": {
+            "description": "Consultation was not found."
+          },
+          "409": {
+            "description": "Consultation is not in 'confirmed' state."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{consultation_id}/cancel": {
+      "post": {
+        "tags": [
+          "consultations"
+        ],
+        "summary": "Cancel an eligible consultation and release its slot",
+        "description": "Patients may cancel only their own future consultations in the 'booked' state; administrators may perform the same action. Releases the slot atomically and returns the preserved cancelled consultation.",
+        "operationId": "cancel_consultation_endpoint_api_v1_consultations__consultation_id__cancel_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "consultation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Consultation Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Unique request key to guarantee at-most-once execution",
+              "title": "Idempotency-Key"
+            },
+            "description": "Unique request key to guarantee at-most-once execution"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsultationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The Idempotency-Key header was missing or invalid."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not the patient owner or an administrator."
+          },
+          "404": {
+            "description": "Consultation was not found."
+          },
+          "409": {
+            "description": "Consultation cannot be cancelled in its current state."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{consultation_id}/prescriptions": {
+      "post": {
+        "tags": [
+          "consultations"
+        ],
+        "summary": "Issue or amend prescription for an eligible consultation",
+        "description": "Issues a medical prescription with structured line items. Only the doctor assigned to the consultation may issue or amend a prescription. Consultations must be in 'in_progress' or 'completed' status. Creates prescription and items atomically.",
+        "operationId": "create_prescription_endpoint_api_v1_consultations__consultation_id__prescriptions_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "consultation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Consultation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrescriptionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrescriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error in structured items."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not the assigned doctor."
+          },
+          "404": {
+            "description": "Consultation was not found."
+          },
+          "409": {
+            "description": "Consultation is not in an eligible status."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "consultations"
+        ],
+        "summary": "Amend an existing prescription",
+        "description": "Corrects or amends an issued prescription. Increments the version counter and atomically updates medication items. Restricted to the assigned doctor.",
+        "operationId": "amend_prescription_endpoint_api_v1_consultations__consultation_id__prescriptions_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "consultation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Consultation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrescriptionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrescriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error in structured items."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not the assigned doctor."
+          },
+          "404": {
+            "description": "Consultation was not found."
+          },
+          "409": {
+            "description": "Consultation is not in an eligible status."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{consultation_id}/prescription": {
+      "get": {
+        "tags": [
+          "consultations"
+        ],
+        "summary": "Retrieve the prescription for a consultation",
+        "description": "Returns the prescription issued for a consultation. Accessible only to the patient recipient, the assigned doctor, or an administrator.",
+        "operationId": "get_consultation_prescription_endpoint_api_v1_consultations__consultation_id__prescription_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "consultation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Consultation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrescriptionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller lacks permission to view this prescription."
+          },
+          "404": {
+            "description": "Consultation or prescription not found."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/consultations/{consultation_id}/payments": {
+      "post": {
+        "tags": [
+          "consultations"
+        ],
+        "summary": "Initiate payment intent for an appointment consultation",
+        "description": "Initiates a payment intent through the simulated payment provider adapter. Requires patient authentication and an Idempotency-Key header. External provider calls occur outside database locks; matching completed retries return original results.",
+        "operationId": "create_consultation_payment_endpoint_api_v1_consultations__consultation_id__payments_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "consultation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Consultation Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Unique request key to guarantee at-most-once execution",
+              "title": "Idempotency-Key"
+            },
+            "description": "Unique request key to guarantee at-most-once execution"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Payment successfully initiated/completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Original completed payment replayed."
+          },
+          "400": {
+            "description": "Missing or invalid Idempotency-Key header."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not the patient who booked the consultation."
+          },
+          "404": {
+            "description": "Consultation was not found."
+          },
+          "409": {
+            "description": "Consultation already paid or in an ineligible status."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/prescriptions/{prescription_id}": {
+      "get": {
+        "tags": [
+          "prescriptions"
+        ],
+        "summary": "Retrieve a prescription by its direct identifier",
+        "description": "Returns the complete prescription and structured medication items. Restricted to the patient who received the prescription, the issuing doctor, or an administrator.",
+        "operationId": "get_prescription_endpoint_api_v1_prescriptions__prescription_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "prescription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Prescription Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrescriptionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not authorized to view this prescription."
+          },
+          "404": {
+            "description": "Prescription was not found."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/payments/{payment_id}": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Retrieve payment status",
+        "description": "Returns payment details and current status. Automatically reconciles pending/timeout transactions if required. Accessible to the paying patient, doctor, or administrator.",
+        "operationId": "get_payment_endpoint_api_v1_payments__payment_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "payment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Payment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller lacks permission to view this payment."
+          },
+          "404": {
+            "description": "Payment was not found."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/payments/webhooks/{provider}": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Process external payment provider webhook callback",
+        "description": "Idempotently processes payment status events from the payment provider adapter. Verifies HMAC webhook signatures and enforces valid state machine transitions.",
+        "operationId": "payment_webhook_endpoint_api_v1_payments_webhooks__provider__post",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "X-Webhook-Signature",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Webhook-Signature"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook processed or replayed successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Payment Webhook Endpoint Api V1 Payments Webhooks  Provider  Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed payload or unsupported provider/event."
+          },
+          "401": {
+            "description": "Invalid webhook HMAC signature."
+          },
+          "404": {
+            "description": "Associated payment record was not found."
+          },
+          "409": {
+            "description": "Invalid payment state transition."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Review security audit logs",
+        "description": "Retrieves a paginated list of tamper-evident security audit logs. Strictly restricted to authorized administrators. Supports filtering by action, resource type, resource ID, actor, and date ranges with deterministic sorting (created_at DESC, id DESC).",
+        "operationId": "list_audit_logs_endpoint_api_v1_admin_audit_logs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by specific action identifier (e.g. 'booking.create')",
+              "title": "Action"
+            },
+            "description": "Filter by specific action identifier (e.g. 'booking.create')"
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by entity type (e.g. 'consultation', 'payment')",
+              "title": "Resource Type"
+            },
+            "description": "Filter by entity type (e.g. 'consultation', 'payment')"
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by target resource UUID",
+              "title": "Resource Id"
+            },
+            "description": "Filter by target resource UUID"
+          },
+          {
+            "name": "actor_user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by actor user UUID",
+              "title": "Actor User Id"
+            },
+            "description": "Filter by actor user UUID"
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter events created on or after UTC timestamp",
+              "title": "Date From"
+            },
+            "description": "Filter events created on or after UTC timestamp"
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter events created on or before UTC timestamp",
+              "title": "Date To"
+            },
+            "description": "Filter events created on or before UTC timestamp"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Entries per page",
+              "default": 20,
+              "title": "Page Size"
+            },
+            "description": "Entries per page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated audit trail log entries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not an administrator."
+          },
+          "422": {
+            "description": "Invalid query filter parameters or pagination values."
+          }
+        }
+      }
+    },
+    "/api/v1/admin/analytics/consultations": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Consultation volume and status trends",
+        "description": "Returns aggregate counts grouped by consultation status, overall completion rate, and daily volume trends. Strictly role-restricted to administrators. Never exposes individual patient clinical details.",
+        "operationId": "get_consultations_analytics_endpoint_api_v1_admin_analytics_consultations_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Evaluation start timestamp (UTC, defaults to 30 days ago)",
+              "title": "Date From"
+            },
+            "description": "Evaluation start timestamp (UTC, defaults to 30 days ago)"
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Evaluation end timestamp (UTC, defaults to current time)",
+              "title": "Date To"
+            },
+            "description": "Evaluation end timestamp (UTC, defaults to current time)"
+          },
+          {
+            "name": "doctor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional filter by assigned doctor UUID",
+              "title": "Doctor Id"
+            },
+            "description": "Optional filter by assigned doctor UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregate consultation metrics and daily trends.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsultationAnalyticsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date range or window exceeds maximum limit."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not an administrator."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/analytics/bookings": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Booking, cancellation, and no-show rates",
+        "description": "Returns aggregated booking metrics including total bookings, cancellation rate, no-show rate, and daily chronological trends. Role-restricted to administrators.",
+        "operationId": "get_bookings_analytics_endpoint_api_v1_admin_analytics_bookings_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Evaluation start timestamp (UTC, defaults to 30 days ago)",
+              "title": "Date From"
+            },
+            "description": "Evaluation start timestamp (UTC, defaults to 30 days ago)"
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Evaluation end timestamp (UTC, defaults to current time)",
+              "title": "Date To"
+            },
+            "description": "Evaluation end timestamp (UTC, defaults to current time)"
+          },
+          {
+            "name": "doctor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional filter by assigned doctor UUID",
+              "title": "Doctor Id"
+            },
+            "description": "Optional filter by assigned doctor UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregate booking metrics and cancellation rates.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingAnalyticsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date range or window exceeds maximum limit."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not an administrator."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/analytics/payments": {
+      "get": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Payment volume and outcome ratios",
+        "description": "Returns aggregated payment metrics including total transaction volume (in minor units), success/failure/refund rates, and daily chronological trends. Role-restricted to administrators. Never exposes cardholder data or sensitive payment provider secrets.",
+        "operationId": "get_payments_analytics_endpoint_api_v1_admin_analytics_payments_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Evaluation start timestamp (UTC, defaults to 30 days ago)",
+              "title": "Date From"
+            },
+            "description": "Evaluation start timestamp (UTC, defaults to 30 days ago)"
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Evaluation end timestamp (UTC, defaults to current time)",
+              "title": "Date To"
+            },
+            "description": "Evaluation end timestamp (UTC, defaults to current time)"
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional currency filter (e.g. 'INR')",
+              "title": "Currency"
+            },
+            "description": "Optional currency filter (e.g. 'INR')"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregate payment volume and outcome ratios.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentAnalyticsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date range or window exceeds maximum limit."
+          },
+          "401": {
+            "description": "Authentication credentials missing or invalid."
+          },
+          "403": {
+            "description": "Caller is not an administrator."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuditLogListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditLogResponse"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "List of audit log records"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total",
+            "description": "Total matching records count"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page",
+            "description": "Current page number"
+          },
+          "page_size": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Page Size",
+            "description": "Page size limit"
+          },
+          "total_pages": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Pages",
+            "description": "Total pages count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "AuditLogListResponse",
+        "description": "Paginated collection of audit log entries."
+      },
+      "AuditLogResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Unique audit event UUID"
+          },
+          "actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor User Id",
+            "description": "User UUID of the actor who performed the action"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "description": "Action classification identifier (e.g. booking.create)"
+          },
+          "resource_type": {
+            "type": "string",
+            "title": "Resource Type",
+            "description": "Target entity type (e.g. consultation, payment)"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id",
+            "description": "Target entity UUID if applicable"
+          },
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id",
+            "description": "Request or correlation trace identifier"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata",
+            "description": "Safe, allowlisted operational metadata with sensitive details redacted"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "UTC timestamp when the event was recorded"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "action",
+          "resource_type",
+          "created_at"
+        ],
+        "title": "AuditLogResponse",
+        "description": "Schema representing an immutable, tamper-evident audit log entry."
+      },
+      "BookingAnalyticsResponse": {
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date From",
+            "description": "Start of evaluated time range (UTC)"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date To",
+            "description": "End of evaluated time range (UTC)"
+          },
+          "total_bookings": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Bookings",
+            "description": "Total bookings in evaluated range"
+          },
+          "confirmed_bookings": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Confirmed Bookings",
+            "description": "Total confirmed bookings"
+          },
+          "completed_bookings": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Completed Bookings",
+            "description": "Total completed bookings"
+          },
+          "cancelled_bookings": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cancelled Bookings",
+            "description": "Total cancelled bookings"
+          },
+          "cancellation_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Cancellation Rate",
+            "description": "Ratio of cancelled to total bookings (0.0 - 1.0)"
+          },
+          "no_show_bookings": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "No Show Bookings",
+            "description": "Total no-show appointments"
+          },
+          "no_show_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "No Show Rate",
+            "description": "Ratio of no-shows to total bookings (0.0 - 1.0)"
+          },
+          "daily_trends": {
+            "items": {
+              "$ref": "#/components/schemas/BookingDailyTrend"
+            },
+            "type": "array",
+            "title": "Daily Trends",
+            "description": "Chronological daily aggregate booking trends"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date_from",
+          "date_to",
+          "total_bookings",
+          "confirmed_bookings",
+          "completed_bookings",
+          "cancelled_bookings",
+          "cancellation_rate",
+          "no_show_bookings",
+          "no_show_rate"
+        ],
+        "title": "BookingAnalyticsResponse",
+        "description": "Aggregate analytics for booking, cancellation, and no-show rates."
+      },
+      "BookingCreateRequest": {
+        "properties": {
+          "doctor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Doctor Id",
+            "description": "Doctor who owns the requested slot"
+          },
+          "slot_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Slot Id",
+            "description": "Availability slot to reserve"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Optional patient-provided reason for the appointment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "doctor_id",
+          "slot_id"
+        ],
+        "title": "BookingCreateRequest",
+        "description": "A patient's request to reserve one specific doctor availability slot."
+      },
+      "BookingDailyTrend": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "Date string in YYYY-MM-DD format"
+          },
+          "total_bookings": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Bookings",
+            "description": "Total bookings created on this date"
+          },
+          "cancelled_bookings": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cancelled Bookings",
+            "description": "Total cancellations on this date"
+          },
+          "no_show_bookings": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "No Show Bookings",
+            "description": "Total no-shows on this date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "total_bookings",
+          "cancelled_bookings",
+          "no_show_bookings"
+        ],
+        "title": "BookingDailyTrend",
+        "description": "Daily aggregate bucket for booking and cancellation volume."
+      },
+      "BookingResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "patient_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Patient Id"
+          },
+          "doctor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Doctor Id"
+          },
+          "slot_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Slot Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "patient_id",
+          "doctor_id",
+          "slot_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "BookingResponse",
+        "description": "The consultation created by a successful booking operation."
+      },
+      "ConsultationAnalyticsResponse": {
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date From",
+            "description": "Start of evaluated time range (UTC)"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date To",
+            "description": "End of evaluated time range (UTC)"
+          },
+          "total_consultations": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Consultations",
+            "description": "Total consultations created in range"
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Status Counts",
+            "description": "Counts grouped by consultation status"
+          },
+          "completion_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Completion Rate",
+            "description": "Ratio of completed to total consultations (0.0 - 1.0)"
+          },
+          "daily_trends": {
+            "items": {
+              "$ref": "#/components/schemas/ConsultationDailyTrend"
+            },
+            "type": "array",
+            "title": "Daily Trends",
+            "description": "Chronological daily aggregate trends"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date_from",
+          "date_to",
+          "total_consultations",
+          "status_counts",
+          "completion_rate"
+        ],
+        "title": "ConsultationAnalyticsResponse",
+        "description": "Aggregate analytics for consultations."
+      },
+      "ConsultationDailyTrend": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "Date string in YYYY-MM-DD format"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total",
+            "description": "Total consultations on this date"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Status",
+            "description": "Consultation counts grouped by status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "total"
+        ],
+        "title": "ConsultationDailyTrend",
+        "description": "Daily aggregate bucket for consultation volume and status counts."
+      },
+      "ConsultationListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConsultationResponse"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "List of consultations on this page"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Total count matching caller scope and filters"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "description": "Current page number (1-indexed)"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size",
+            "description": "Number of items per page"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages",
+            "description": "Total available pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "ConsultationListResponse",
+        "description": "Bounded, paginated list of consultations."
+      },
+      "ConsultationResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Unique consultation identifier"
+          },
+          "patient_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Patient Id",
+            "description": "ID of the patient who booked the consultation"
+          },
+          "doctor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Doctor Id",
+            "description": "ID of the assigned doctor"
+          },
+          "slot_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Slot Id",
+            "description": "ID of the reserved availability slot"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Current lifecycle status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Patient appointment reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Creation timestamp in UTC"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "Last update timestamp in UTC"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "patient_id",
+          "doctor_id",
+          "slot_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConsultationResponse",
+        "description": "Consultation entity representation."
+      },
+      "DoctorListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DoctorPublicResponse"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Doctor profiles corresponding to the current page"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Total matching doctors matching query filters"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "description": "Current page number (1-indexed)"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size",
+            "description": "Number of results per page (bounded 1-100)"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages",
+            "description": "Total number of available pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "DoctorListResponse",
+        "description": "Bounded, paginated listing of public doctor profiles with metadata."
+      },
+      "DoctorPublicResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Unique doctor public identifier"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Doctor's full legal name from verified profile"
+          },
+          "specialization": {
+            "type": "string",
+            "title": "Specialization",
+            "description": "Primary clinical specialization"
+          },
+          "is_verified": {
+            "type": "boolean",
+            "title": "Is Verified",
+            "description": "Whether doctor credentials have been verified"
+          },
+          "consultation_fee_minor": {
+            "type": "integer",
+            "title": "Consultation Fee Minor",
+            "description": "Standard consultation fee represented in integer minor units (e.g. paise)"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "description": "ISO 4217 three-letter currency code (e.g. INR)"
+          },
+          "bio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bio",
+            "description": "Public biographical summary"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Profile creation timestamp in UTC"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "Profile last update timestamp in UTC"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "specialization",
+          "is_verified",
+          "consultation_fee_minor",
+          "currency",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DoctorPublicResponse",
+        "description": "Public doctor profile representation.\n\nStrictly shields sensitive information: license_number, user account credentials,\nemail, phone number, and internal identifiers are intentionally excluded."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "LivenessResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Process liveness indicator",
+            "default": "ok"
+          }
+        },
+        "type": "object",
+        "title": "LivenessResponse",
+        "description": "Schema for liveness probe response."
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email",
+            "description": "User registered email address",
+            "examples": [
+              "patient@example.com"
+            ]
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "description": "Account password",
+            "examples": [
+              "SecurePassw0rd!"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "description": "Payload schema for user authentication."
+      },
+      "PaymentAnalyticsResponse": {
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date From",
+            "description": "Start of evaluated time range (UTC)"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date To",
+            "description": "End of evaluated time range (UTC)"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "description": "Currency code for evaluated volume",
+            "default": "INR"
+          },
+          "total_payments": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Payments",
+            "description": "Total payment attempts in evaluated range"
+          },
+          "total_volume_minor": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Volume Minor",
+            "description": "Total succeeded payment volume in minor currency units"
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Status Counts",
+            "description": "Counts grouped by payment status"
+          },
+          "success_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Success Rate",
+            "description": "Ratio of succeeded to total payments (0.0 - 1.0)"
+          },
+          "failure_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Failure Rate",
+            "description": "Ratio of failed to total payments (0.0 - 1.0)"
+          },
+          "refund_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Refund Rate",
+            "description": "Ratio of refunded to total payments (0.0 - 1.0)"
+          },
+          "daily_trends": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentDailyTrend"
+            },
+            "type": "array",
+            "title": "Daily Trends",
+            "description": "Chronological daily aggregate payment trends"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date_from",
+          "date_to",
+          "total_payments",
+          "total_volume_minor",
+          "status_counts",
+          "success_rate",
+          "failure_rate",
+          "refund_rate"
+        ],
+        "title": "PaymentAnalyticsResponse",
+        "description": "Aggregate analytics for payment volume, outcomes, and failure ratios."
+      },
+      "PaymentCreateRequest": {
+        "properties": {
+          "simulation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Simulation",
+            "description": "Optional simulation mode for evaluation (e.g. 'success', 'failure', 'timeout', 'pending')"
+          },
+          "amount_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Minor",
+            "description": "Optional expected consultation fee minor units for client-side assertion"
+          }
+        },
+        "type": "object",
+        "title": "PaymentCreateRequest",
+        "description": "Request payload to initiate a consultation payment intent."
+      },
+      "PaymentDailyTrend": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "Date string in YYYY-MM-DD format"
+          },
+          "total_payments": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Payments",
+            "description": "Total payment transactions on this date"
+          },
+          "succeeded_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Succeeded Count",
+            "description": "Number of successful transactions"
+          },
+          "failed_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failed Count",
+            "description": "Number of failed transactions"
+          },
+          "succeeded_volume_minor": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Succeeded Volume Minor",
+            "description": "Total succeeded amount in integer minor units"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "total_payments",
+          "succeeded_count",
+          "failed_count",
+          "succeeded_volume_minor"
+        ],
+        "title": "PaymentDailyTrend",
+        "description": "Daily aggregate bucket for payment outcomes."
+      },
+      "PaymentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Unique payment identifier"
+          },
+          "consultation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Consultation Id",
+            "description": "Associated consultation ID"
+          },
+          "amount_minor": {
+            "type": "integer",
+            "title": "Amount Minor",
+            "description": "Payment amount in minor units (e.g. paise)"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "description": "ISO 4217 three-letter currency code (e.g. INR)"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Payment lifecycle status"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider",
+            "description": "Payment provider identifier"
+          },
+          "provider_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Reference",
+            "description": "External provider transaction reference"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Timestamp in UTC when record was created"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "Timestamp in UTC when record was last updated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "consultation_id",
+          "amount_minor",
+          "currency",
+          "status",
+          "provider",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PaymentResponse",
+        "description": "Payment transaction representation."
+      },
+      "PrescriptionCreate": {
+        "properties": {
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes",
+            "description": "Optional clinical notes or diagnosis summary"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PrescriptionItemCreate"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Items",
+            "description": "Structured medication line items (at least one item required)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "PrescriptionCreate",
+        "description": "Request payload for issuing or amending a consultation prescription."
+      },
+      "PrescriptionItemCreate": {
+        "properties": {
+          "medicine_name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Medicine Name",
+            "description": "Standard or brand medication name"
+          },
+          "dosage": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Dosage",
+            "description": "Medication dosage strength (e.g. 500mg, 10ml)"
+          },
+          "route": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Route",
+            "description": "Administration route (e.g. oral, topical, sublingual)"
+          },
+          "frequency": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Frequency",
+            "description": "Intake frequency (e.g. twice daily, every 8 hours)"
+          },
+          "duration": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Duration",
+            "description": "Treatment duration (e.g. 5 days, 2 weeks)"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions",
+            "description": "Optional special clinical instructions for the patient"
+          }
+        },
+        "type": "object",
+        "required": [
+          "medicine_name",
+          "dosage",
+          "route",
+          "frequency",
+          "duration"
+        ],
+        "title": "PrescriptionItemCreate",
+        "description": "Line item specification for a medical prescription."
+      },
+      "PrescriptionItemResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "prescription_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Prescription Id"
+          },
+          "medicine_name": {
+            "type": "string",
+            "title": "Medicine Name"
+          },
+          "dosage": {
+            "type": "string",
+            "title": "Dosage"
+          },
+          "route": {
+            "type": "string",
+            "title": "Route"
+          },
+          "frequency": {
+            "type": "string",
+            "title": "Frequency"
+          },
+          "duration": {
+            "type": "string",
+            "title": "Duration"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "prescription_id",
+          "medicine_name",
+          "dosage",
+          "route",
+          "frequency",
+          "duration"
+        ],
+        "title": "PrescriptionItemResponse",
+        "description": "Prescription line item response."
+      },
+      "PrescriptionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "consultation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Consultation Id"
+          },
+          "patient_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Patient Id"
+          },
+          "doctor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Doctor Id"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "issued_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Issued At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PrescriptionItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "consultation_id",
+          "patient_id",
+          "doctor_id",
+          "version",
+          "issued_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PrescriptionResponse",
+        "description": "Prescription response model."
+      },
+      "ProfileResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Unique profile identifier"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name",
+            "description": "Patient full name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone",
+            "description": "Contact phone number"
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth",
+            "description": "Date of birth"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Profile creation timestamp (UTC)"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "Profile last update timestamp (UTC)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "full_name",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProfileResponse",
+        "description": "Public demographic profile details."
+      },
+      "ReadinessResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Service readiness indicator",
+            "default": "ok"
+          },
+          "database": {
+            "type": "string",
+            "title": "Database",
+            "description": "PostgreSQL connectivity state",
+            "default": "connected"
+          },
+          "redis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redis",
+            "description": "Redis connectivity state if configured"
+          }
+        },
+        "type": "object",
+        "title": "ReadinessResponse",
+        "description": "Schema for readiness probe response."
+      },
+      "SlotBatchCreateRequest": {
+        "properties": {
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/SlotCreateRequest"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Slots",
+            "description": "List of availability slot intervals (minimum 1, maximum 50)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slots"
+        ],
+        "title": "SlotBatchCreateRequest",
+        "description": "Payload to create multiple availability slots in a single atomic request."
+      },
+      "SlotCreateRequest": {
+        "properties": {
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start At",
+            "description": "Slot start timestamp in UTC (ISO-8601)",
+            "examples": [
+              "2026-10-30T09:00:00Z"
+            ]
+          },
+          "end_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End At",
+            "description": "Slot end timestamp in UTC (ISO-8601)",
+            "examples": [
+              "2026-10-30T09:30:00Z"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_at",
+          "end_at"
+        ],
+        "title": "SlotCreateRequest",
+        "description": "Payload to create an availability time slot."
+      },
+      "SlotListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SlotResponse"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "List of availability slots"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Total matching slots count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "SlotListResponse",
+        "description": "Envelope for listing doctor availability slots."
+      },
+      "SlotResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Unique slot identifier"
+          },
+          "doctor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Doctor Id",
+            "description": "Doctor identifier"
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start At",
+            "description": "Slot start timestamp in UTC"
+          },
+          "end_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End At",
+            "description": "Slot end timestamp in UTC"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Slot status ('available', 'booked', 'blocked')"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Slot creation timestamp in UTC"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "Slot last update timestamp in UTC"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "doctor_id",
+          "start_at",
+          "end_at",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SlotResponse",
+        "description": "Public representation of an availability slot."
+      },
+      "SlotUpdateRequest": {
+        "properties": {
+          "start_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start At",
+            "description": "Updated slot start timestamp in UTC",
+            "examples": [
+              "2026-10-30T10:00:00Z"
+            ]
+          },
+          "end_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End At",
+            "description": "Updated slot end timestamp in UTC",
+            "examples": [
+              "2026-10-30T10:30:00Z"
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "available",
+                  "blocked"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "Updated slot status ('available' or 'blocked')",
+            "examples": [
+              "blocked"
+            ]
+          }
+        },
+        "type": "object",
+        "title": "SlotUpdateRequest",
+        "description": "Payload to update an unbooked availability slot."
+      },
+      "TokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token",
+            "description": "JWT bearer access token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "description": "Token type specification",
+            "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Token lifespan in seconds"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserResponse",
+            "description": "Authenticated user account details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_in",
+          "user"
+        ],
+        "title": "TokenResponse",
+        "description": "JWT bearer token and authenticated user details."
+      },
+      "UserRegisterRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email",
+            "description": "Patient unique email address",
+            "examples": [
+              "patient@example.com"
+            ]
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Password",
+            "description": "Account password (min 8, max 128 characters)",
+            "examples": [
+              "SecurePassw0rd!"
+            ]
+          },
+          "full_name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Full Name",
+            "description": "Patient full legal name",
+            "examples": [
+              "Aarav Sharma"
+            ]
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone",
+            "description": "Optional contact telephone number",
+            "examples": [
+              "+919876543210"
+            ]
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth",
+            "description": "Optional date of birth (YYYY-MM-DD)",
+            "examples": [
+              "1990-05-15"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password",
+          "full_name"
+        ],
+        "title": "UserRegisterRequest",
+        "description": "Payload schema for new patient account registration."
+      },
+      "UserResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Unique user identifier"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "User verified normalized email address"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "description": "Assigned role (e.g. 'patient')"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "description": "Account active status"
+          },
+          "mfa_enabled": {
+            "type": "boolean",
+            "title": "Mfa Enabled",
+            "description": "Whether MFA is enabled on account"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Account creation timestamp (UTC)"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "Account last update timestamp (UTC)"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Associated user profile"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "role",
+          "is_active",
+          "mfa_enabled",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "UserResponse",
+        "description": "Safe user account representation that guarantees sensitive fields are omitted."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

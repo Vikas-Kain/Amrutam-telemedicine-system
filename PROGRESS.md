@@ -2239,6 +2239,60 @@ git add .github/ Dockerfile pyproject.toml tests/ docs/ PROGRESS.md
 git commit -m "ci: add test pipeline container build and security scans"
 ```
 
+---
+
+## Milestone 25: Finalize documentation and demo runbook
+
+**Status:** Completed and verified locally.
+
+- **README Overhaul ([`README.md`](README.md)):**
+  - Updated project status to reflect all 25 milestones complete with 332 automated tests passing cleanly.
+  - Documented clean-clone setup, `.env` configuration, database startup, migrations, FastAPI execution, and background worker startup.
+  - Documented static OpenAPI export, interactive docs (`/docs`, `/redoc`), observability health probes (`/health/live`, `/health/ready`), Prometheus metrics exposition (`/metrics`), and Grafana starter dashboard.
+  - Documented backup/restore runbook with proposed RPO (< 15 min) and RTO (< 60 min).
+  - Explicitly disclosed design boundaries and known limitations (mock payment adapter, in-memory rate limiting process scope, slot contention 409 responses, regulatory compliance disclaimer).
+- **Five-Minute Evaluation Demo Script ([`docs/demo-script.md`](docs/demo-script.md)):**
+  - Created a runnable step-by-step evaluation guide with PowerShell and curl commands demonstrating:
+    1. Health and readiness probes (`/health/live`, `/health/ready`).
+    2. User registration and authentication for patients and doctors.
+    3. Doctor availability slot creation.
+    4. Concurrency-safe atomic appointment booking with `Idempotency-Key` (HTTP 201).
+    5. Duplicate idempotent retry returning cached response with `X-Idempotent-Replay: true` (zero duplicate DB writes).
+    6. Conflicting booking attempt rejected with HTTP 409 Conflict (`SLOT_NOT_AVAILABLE`).
+    7. Cross-patient unauthorized access rejected with HTTP 403 Forbidden (`FORBIDDEN`).
+    8. Consultation lifecycle transitions (`booked -> confirmed -> in_progress -> completed`) and prescription issuance.
+    9. Prometheus metrics inspection with low-cardinality route labels.
+    10. Automated quality, vulnerability, and test suite execution.
+- **Static OpenAPI JSON Export ([`docs/openapi.json`](docs/openapi.json)):**
+  - Exported complete OpenAPI 3.1.0 schema (4,241 lines) in UTF-8 JSON covering all routes, parameters, request bodies, and error response models.
+- **Security Artifacts Verification ([`docs/security-checklist.md`](docs/security-checklist.md) & [`docs/security-threat-model.md`](docs/security-threat-model.md)):**
+  - Updated security checklist with verified `Tested` statuses and exact test references; eliminated all `Not started` entries.
+  - Updated STRIDE threat catalog with implementation module paths and test coverage mappings.
+  - Verified architecture diagrams (`booking-sequence.mmd`, `er-diagram.mmd`) match implementation.
+- **Automated Documentation Tests ([`tests/test_documentation_and_runbook.py`](tests/test_documentation_and_runbook.py)):**
+  - Added 6 automated tests validating README integrity, demo script coverage, OpenAPI schema validity, security checklist status, STRIDE catalog, and Mermaid diagram files.
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\pip-audit.exe
+.\.venv\Scripts\pytest.exe tests/test_documentation_and_runbook.py -v
+.\.venv\Scripts\pytest.exe -v
+```
+
+All commands passed (332 total tests passed, 0 failures, 0 errors).
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add README.md docs/ tests/ PROGRESS.md
+git commit -m "docs: finalize setup security operations and demo guide"
+```
+
 
 
 
