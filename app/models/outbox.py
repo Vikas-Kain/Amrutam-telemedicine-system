@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     DateTime,
+    Index,
     Integer,
     String,
     Text,
@@ -58,3 +59,10 @@ class OutboxEvent(Base):
         index=True,
     )
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
+    __table_args__ = (Index("ix_outbox_events_status_next_retry", "status", "next_retry_at"),)

@@ -51,6 +51,27 @@ services:
       retries: 3
       start_period: 5s
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    container_name: amrutam-worker
+    environment:
+      APP_NAME: ${APP_NAME:-Amrutam Telemedicine Worker}
+      APP_ENV: ${APP_ENV:-development}
+      DEBUG: ${DEBUG:-false}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-amrutam_telemedicine}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-console}
+    volumes:
+      - ./app:/app/app:ro
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:
     driver: local
+

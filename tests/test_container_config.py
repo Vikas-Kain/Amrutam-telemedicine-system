@@ -109,3 +109,13 @@ def test_docker_compose_services_and_healthchecks():
     # App command should not run automatic, unsafe migrations on worker startup
     app_command = str(app_service.get("command", ""))
     assert "alembic" not in app_command.lower(), "Unsafe auto-migrations must not run on app worker"
+
+    # Verify outbox worker service configuration
+    assert "worker" in services, "worker service must be defined in docker-compose.yml"
+    worker_service = services["worker"]
+    assert "build" in worker_service
+    assert "depends_on" in worker_service
+    depends_on_db_worker = worker_service["depends_on"].get("db", {})
+    assert depends_on_db_worker.get("condition") == "service_healthy"
+    worker_command = worker_service.get("command", [])
+    assert any("app.worker" in str(arg) for arg in worker_command)

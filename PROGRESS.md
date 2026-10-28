@@ -26,8 +26,8 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **16** | Payment Lifecycle & Mock Provider Adapter | `feat: add payment lifecycle with mock provider adapter` | **Implemented (Pending Commit)** |
 | **17** | Audit Logging for Sensitive Operations | `feat: add security audit trail for critical actions` | **Implemented (Pending Commit)** |
 | **18** | Aggregate Admin Analytics | `feat: add role-protected admin analytics endpoints` | **Implemented (Pending Commit)** |
-| **19** | Background Jobs & Transactional Outbox | `feat: add background jobs and transactional outbox` | *Next Up* |
-| **20** | Rate Limiting & Resilience Policies | `feat: add rate limiting and resilience policies` | *Planned* |
+| **19** | Background Jobs & Transactional Outbox | `feat: add reliable background job processing with outbox` | **Implemented (Pending Commit)** |
+| **20** | Rate Limiting & Resilience Policies | `feat: add API rate limits and bounded resilience policies` | *Next Up* |
 | **21** | Core API & Security Test Coverage | `test: complete core API and security test coverage` | *Planned* |
 | **22** | Logs, Metrics, Traces & Health Probes | `feat: instrument logs, metrics, traces, and health checks` | *Planned* |
 | **23** | Performance Benchmark & Scaling Scenarios | `test: add performance test scenarios and scaling evidence` | *Planned* |
@@ -1843,6 +1843,74 @@ Per `AGENTS.md`, no commit was created. Review the diff, then run:
 git add alembic/ app/ tests/ docs/ PROGRESS.md
 git commit -m "feat: add role-protected admin analytics endpoints"
 ```
+
+---
+
+## Milestone 19: Background jobs and transactional outbox
+
+**Status:** Implemented and verified on local PostgreSQL.
+
+- **Schema & Migration (`alembic/versions/0010_outbox_retry_fields.py`):**
+  - Added `next_retry_at` (nullable `DateTime(timezone=True)`) to `outbox_events`.
+  - Added composite index `ix_outbox_events_status_next_retry` on `("status", "next_retry_at")` for fast polling.
+  - Updated `OutboxEvent` model in `app/models/outbox.py`.
+- **Retry & Backoff Module (`app/core/retry.py`):**
+  - Implemented `calculate_backoff_delay`: Bounded exponential backoff with full jitter
+    (`delay = min(max_delay, base_delay * 2^(attempt - 1)) * jitter`), preventing thundering herds.
+  - Implemented `is_transient_error`: Classifies transient failures (network socket drops, timeouts, database
+    connection outages, serialization conflicts, 503 errors) versus permanent failures (schema validation,
+    type errors, 4xx client errors) to avoid burning retry budgets on unrecoverable errors.
+  - Defined `RetryPolicy`, `TransientError`, and `PermanentError`.
+- **Idempotent Handlers (`app/services/outbox/handlers.py`):**
+  - Handlers for `booking.created` (booking confirmation notification dispatch), `booking.cancelled`
+    (cancellation alert), `payment.succeeded` (receipt dispatch), and status transition events.
+  - Idempotent consumer design: Tracks dispatched side-effects to skip duplicate execution under at-least-once delivery.
+  - Pluggable `HANDLER_REGISTRY` allowing custom task registration and test overrides.
+  - Privacy guarantee: Event payloads strictly omit clinical notes, reasons, diagnosis, prescription items, and PAN/CVV.
+- **Outbox Worker (`app/services/outbox/worker.py`):**
+  - `OutboxWorker`: Implements asynchronous batch polling and execution.
+  - Uses PostgreSQL row-locking `SELECT ... FOR UPDATE SKIP LOCKED` to allow horizontal multi-worker scaling without lock contention.
+  - Manages event lifecycle: `pending` → `completed` on success; transient failure → `failed` with exponential backoff delay
+    and `next_retry_at`; permanent failure or retries exhausted → `dead_letter` with full error trace.
+- **Local Development Command & Container:**
+  - CLI runner `app/worker.py` (`python -m app.worker --once` or `--batch-size` / `--poll-interval`).
+  - Added `worker` container service to `docker-compose.yml` with health-checked dependency on PostgreSQL.
+- **Automated Tests (`tests/test_outbox_worker.py`):**
+  - 9 automated tests covering:
+    - Exponential backoff progression, bounds, and jitter.
+    - Error classification (transient vs permanent).
+    - Idempotent handler duplicate delivery skipping side-effects.
+    - Successful processing of `booking.created` event.
+    - Transient failure retry, backoff scheduling, and eventual recovery.
+    - Permanent failure immediate dead-letter routing.
+    - Retry exhaustion dead-letter routing.
+    - Payload privacy invariants (zero clinical notes or card details).
+    - Live PostgreSQL concurrent worker execution proving `FOR UPDATE SKIP LOCKED` claims disjoint batches.
+- **Documentation Updates:**
+  - `docs/architecture.md`: Documented delivery semantics (at-least-once, idempotent consumers, no exactly-once claims).
+  - `docs/requirements-traceability.md`: Marked Retry and backoff row as Implemented with test evidence.
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\pytest.exe tests/test_outbox_worker.py -v
+.\.venv\Scripts\pytest.exe -v
+```
+
+All commands passed (234 total tests).
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add alembic/ app/ tests/ docs/ docker-compose.yml PROGRESS.md
+git commit -m "feat: add reliable background job processing with outbox"
+```
+
 
 
 
