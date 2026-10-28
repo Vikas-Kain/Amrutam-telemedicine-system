@@ -4,38 +4,35 @@ sequenceDiagram
     participant API as FastAPI
     participant Svc as Booking Service
     participant DB as PostgreSQL
-    participant Worker as Outbox Worker
 
     Patient->>API: POST /api/v1/bookings + Idempotency-Key
-    API->>API: Authenticate and validate payload
-    API->>Svc: Create booking request
-    Svc->>DB: BEGIN
-    Svc->>DB: Claim/read key + request fingerprint
+    API->>API: Authenticate patient and validate request
+    API->>Svc: create_booking(patient, doctor_id, slot_id, reason, key)
+    Svc->>DB: BEGIN (request transaction)
+    Svc->>DB: Claim/read actor + operation scoped idempotency key
 
-    alt Same key with completed identical request
-        DB-->>Svc: Stored original outcome
-        Svc-->>API: Original booking result
-        API-->>Patient: 200 OK (Original result replayed)
-    else Key conflicts or slot unavailable
-        Svc->>DB: Validate/lock slot and enforce constraints
-        DB-->>Svc: Slot already booked / payload mismatch
-        Svc->>DB: ROLLBACK
-        Svc-->>API: 409 Conflict
-        API-->>Patient: 409 Conflict error
-    else New valid booking
-        Svc->>DB: Lock/conditionally reserve available slot (SELECT FOR UPDATE)
-        Svc->>DB: Insert consultation + update slot status to booked
-        Svc->>DB: Store completed idempotency record
-        opt Deferred notification event configured
-            Svc->>DB: Insert outbox event
-        end
-        Svc->>DB: COMMIT
-        DB-->>Svc: Commit successful
-        Svc-->>API: Booking created
-        API-->>Patient: 201 Created (Booking details)
-        opt Outbox event dispatch
-            Worker->>DB: Poll and claim pending outbox event
-            Worker->>Worker: Deliver notification idempotently with bounded retries
-            Worker->>DB: Mark event processed or schedule retry
+    alt Matching completed key
+        DB-->>Svc: Stored booking response
+        Svc-->>API: Replay original representation
+        API-->>Patient: 200 OK
+    else New request
+        Svc->>DB: SELECT slot FOR UPDATE
+        alt Slot missing, mismatched, unavailable, or already booked
+            DB-->>Svc: Conflict/not-found condition
+            Svc->>DB: ROLLBACK (including idempotency claim)
+            Svc-->>API: Safe error
+            API-->>Patient: 404 / 409 error
+        else Available future slot owned by doctor
+            Svc->>DB: Insert consultation (status = booked)
+            Svc->>DB: Update slot status to booked
+            Note over DB: Partial unique index prevents a second active consultation
+            Svc->>DB: Store completed idempotency response
+            Svc->>DB: Insert minimal booking.created outbox event
+            Svc->>DB: COMMIT
+            DB-->>Svc: Commit successful
+            Svc-->>API: Created booking
+            API-->>Patient: 201 Created
         end
     end
+
+    Note over Svc,DB: No network call or event dispatch occurs while the slot lock is held.

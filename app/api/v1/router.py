@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, doctors, health
+from app.api.v1.endpoints import auth, bookings, doctors, health
 
 api_v1_router = APIRouter(prefix="/v1")
 
@@ -14,3 +14,6 @@ api_v1_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 
 # Mount doctors routes under /api/v1/doctors
 api_v1_router.include_router(doctors.router, prefix="/doctors", tags=["doctors"])
+
+# Mount booking routes under /api/v1/bookings
+api_v1_router.include_router(bookings.router, prefix="/bookings", tags=["bookings"])

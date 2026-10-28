@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     func,
 )
@@ -154,10 +155,14 @@ class AvailabilitySlot(Base):
         ),
         Index("ix_availability_slots_doctor_start_status", "doctor_id", "start_at", "status"),
         Index("ix_availability_slots_doctor_range", "doctor_id", "start_at", "end_at"),
+        # Referenced by consultations' composite FK (slot_id, doctor_id).
+        UniqueConstraint("id", "doctor_id", name="uq_availability_slots_id_doctor"),
     )
 
     doctor: Mapped["Doctor"] = relationship("Doctor", back_populates="slots")
     consultations: Mapped[list["Consultation"]] = relationship(
         "Consultation",
         back_populates="slot",
+        foreign_keys="Consultation.slot_id",
+        primaryjoin="AvailabilitySlot.id == Consultation.slot_id",
     )

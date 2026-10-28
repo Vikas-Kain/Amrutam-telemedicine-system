@@ -55,6 +55,14 @@ Prefix: `/api/v1`. The service exposes a REST API with OpenAPI specification aut
 | POST | `/api/v1/consultations/{id}/complete` | Assigned Doctor | Complete consultation (`in_progress` → `completed`) |
 | POST | `/api/v1/consultations/{id}/no-show` | Assigned Doctor / Admin | Mark patient no-show (`confirmed` → `no_show`) |
 
+`POST /api/v1/bookings` requires a patient access token and an `Idempotency-Key` header. Its body
+contains `doctor_id` (UUID), `slot_id` (UUID), and an optional `reason` no longer than 2,000
+characters. It returns the created consultation (`id`, `patient_id`, `doctor_id`, `slot_id`,
+`status`, optional `reason`, `created_at`, and `updated_at`) with `201 Created`. A matching
+completed retry returns the exact stored representation with `200 OK`; a reused key with a changed
+body, a slot owned by a different doctor, or an unavailable slot returns `409 Conflict`. Booking
+is limited to future slots whose status is `available`.
+
 ## 4. Prescriptions (`/consultations/{id}/prescriptions`, `/prescriptions`)
 
 | Method | Path | Access | Description |

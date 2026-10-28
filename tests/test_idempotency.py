@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from app.core.errors import BadRequestError, ConflictError
-from app.db.session import get_db_session
+from app.db.session import get_db_session, get_session_factory
 from app.models.idempotency import IdempotencyKey
 from app.models.user import User
 from app.schemas.idempotency import IdempotencyResult, IdempotencyStatus
@@ -416,9 +416,39 @@ async def test_record_success_and_failure_transitions():
     assert updated.response_code == 201
     assert updated.resource_id == res_id
 
-    # 2. Failure transition
+    # 2. A completed record must never be downgraded to failed
     await record_failure(session=mock_session, record_id=record_id)
+    assert record.status == "completed"
+
+    # 3. A completed record cannot be completed a second time
+    with pytest.raises(ConflictError) as exc:
+        await record_success(session=mock_session, record_id=record_id, response_code=200)
+    assert exc.value.code == "IDEMPOTENCY_INVALID_STATE"
+
+
+@pytest.mark.asyncio
+async def test_record_failure_marks_in_progress_record_failed():
+    """Verify record_failure transitions an in-progress record to failed."""
+    record = IdempotencyKey(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        key="key-2",
+        operation="payment",
+        request_hash="hash",
+        status="in_progress",
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+    )
+    mock_session = AsyncMock()
+    mock_session.get.return_value = record
+
+    await record_failure(session=mock_session, record_id=record.id)
     assert record.status == "failed"
+
+
+def test_compute_request_hash_bytes_and_str_parity():
+    """Verify UTF-8 bytes hash identically to the equivalent string (JSON and non-JSON)."""
+    assert compute_request_hash(b'{"a": 1}') == compute_request_hash('{"a":1}')
+    assert compute_request_hash(b"plain-text") == compute_request_hash("plain-text")
 
 
 @pytest.mark.asyncio
@@ -429,7 +459,7 @@ async def test_cleanup_expired_keys_execution():
     mock_result.rowcount = 5
     mock_session.execute.return_value = mock_result
 
-    deleted_count = await cleanup_expired_keys(session=mock_session)
+    deleted_count = await cleanup_expired_keys(session=mock_session, batch_size=10)
     assert deleted_count == 5
     assert mock_session.execute.called
     assert mock_session.flush.called
@@ -648,3 +678,58 @@ async def test_live_postgres_concurrent_same_key_race_handling():
         assert len(records) == 1
         assert records[0].status == "completed"
         break
+
+
+@pytest.mark.skipif(
+    not is_postgres_available(),
+    reason="Live PostgreSQL instance not reachable; run via Docker Compose or in CI",
+)
+@pytest.mark.asyncio
+async def test_live_postgres_concurrent_reclaim_of_failed_key_is_serialized():
+    """Two concurrent retries of a FAILED key: exactly one re-executes, the other replays.
+
+    Regression test: without SELECT ... FOR UPDATE on the existing record, both retries could
+    observe the reclaimable row and both execute side effects.
+    """
+    suffix = uuid.uuid4().hex[:6]
+    user_id = uuid.uuid4()
+    key = f"reclaim-race-{suffix}"
+    operation = "reclaim_test"
+    payload = {"slot": "slot-1"}
+
+    factory = get_session_factory()
+    async with factory() as session:
+        session.add(
+            User(
+                id=user_id,
+                email_normalized=f"reclaim_{suffix}@amrutam.co.in",
+                password_hash="placeholder_hash",
+                role="patient",
+            )
+        )
+        await session.flush()
+        session.add(
+            IdempotencyKey(
+                user_id=user_id,
+                key=key,
+                operation=operation,
+                request_hash=compute_request_hash(payload),
+                status="failed",
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+        )
+        await session.commit()
+
+    async def worker(idx: int) -> str:
+        async with factory() as s:
+            res = await claim_or_replay(s, user_id, key, operation, payload)
+            if res.is_replayed:
+                await s.rollback()
+                return "replayed"
+            await asyncio.sleep(0.1)  # hold the row lock so the other worker must wait
+            await record_success(s, res.idempotency_record_id, 201, {"winner": idx})
+            await s.commit()
+            return "won"
+
+    results = await asyncio.gather(worker(0), worker(1))
+    assert sorted(results) == ["replayed", "won"], results

@@ -45,6 +45,7 @@ This document specifies the logical data model for the Amrutam Telemedicine Back
   - Check constraint: `status IN ('available', 'booked', 'blocked')` (`chk_availability_slots_status`).
   - Exclusion constraint: `exclude_overlapping_doctor_slots` via PostgreSQL GiST (`btree_gist` extension): `EXCLUDE USING gist (doctor_id WITH =, tstzrange(start_at, end_at) WITH &&)`.
   - Composite indexes: `(doctor_id, start_at, status)` (`ix_availability_slots_doctor_start_status`) and `(doctor_id, start_at, end_at)` (`ix_availability_slots_doctor_range`).
+  - Composite unique key: `(id, doctor_id)` (`uq_availability_slots_id_doctor`), referenced by the consultation ownership foreign key.
 - **Lifecycle & Booking Rules:**
   - Statuses:
     - `'available'`: Open for appointment booking by patients.
@@ -63,6 +64,7 @@ This document specifies the logical data model for the Amrutam Telemedicine Back
 - `created_at`, `updated_at`: TIMESTAMPTZ, non-null.
 - **Constraints:**
   - Partial unique index: `UNIQUE (slot_id) WHERE status NOT IN ('cancelled')` to guarantee no double-booking at the database level.
+  - Composite foreign key `(slot_id, doctor_id)` → `availability_slots(id, doctor_id)` (`fk_consultations_slot_doctor`) prevents pairing a consultation with a doctor other than the slot owner.
   - Foreign keys ensure referential integrity with patient, doctor, and slot.
 
 ### prescriptions
@@ -130,6 +132,7 @@ This document specifies the logical data model for the Amrutam Telemedicine Back
 - `last_error`: TEXT, nullable.
 - `created_at`: TIMESTAMPTZ, non-null, indexed.
 - `processed_at`: TIMESTAMPTZ, nullable.
+- **Booking event rule:** successful booking transactions persist a `booking.created` event containing only consultation, doctor, and slot identifiers; the appointment reason is excluded.
 
 ## Invariants to enforce and test
 1. **Email uniqueness:** `email_normalized` is strictly unique across all active accounts.

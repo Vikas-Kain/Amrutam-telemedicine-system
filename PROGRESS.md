@@ -1456,6 +1456,47 @@ git add alembic/ app/ tests/ docs/ .env.example PROGRESS.md
 git commit -m "feat: add idempotency key persistence for write requests"
 ```
 
+---
 
+## Milestone 12: Atomic idempotent appointment booking
+
+**Status:** Implemented and verified on local PostgreSQL.
+
+- Added `POST /api/v1/bookings`, restricted to authenticated patients and requiring
+  `Idempotency-Key`.
+- Booking uses one request transaction to claim/replay idempotency, lock the selected slot,
+  confirm its doctor and future/available state, create the consultation, mark the slot booked,
+  store the completed response, and enqueue a minimal `booking.created` outbox event.
+- PostgreSQL protects the workflow with `SELECT ... FOR UPDATE`, the existing partial unique
+  active-consultation index, and a new composite foreign key enforcing slot-to-doctor ownership.
+- A matching completed retry returns the stored booking with HTTP 200; changed payloads and
+  availability conflicts return safe HTTP 409 responses. Clinical appointment reasons are not
+  included in outbox payloads.
+- Prompt 11 was additionally verified: idempotency reclaim operations lock an existing record,
+  completed records cannot be overwritten, cleanup is bounded, and the PostgreSQL race tests pass.
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\alembic.exe upgrade head --sql
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\pytest.exe tests/test_bookings.py::test_live_postgres_competing_patients_create_one_booking_and_one_outbox_event -q
+.\.venv\Scripts\pytest.exe tests/test_idempotency.py -q
+.\.venv\Scripts\pytest.exe -q
+```
+
+All commands passed (149 tests). The full suite currently emits the pre-existing Starlette TestClient
+deprecation warning for the installed HTTPX integration.
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add alembic/ app/ tests/ docs/ PROGRESS.md
+git commit -m "feat: implement atomic idempotent appointment booking"
+```
 
 

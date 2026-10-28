@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     String,
     Text,
@@ -84,6 +85,13 @@ class Consultation(Base):
             unique=True,
             postgresql_where=text("status NOT IN ('cancelled')"),
         ),
+        # Composite FK: the consultation's doctor must own the referenced slot.
+        ForeignKeyConstraint(
+            ["slot_id", "doctor_id"],
+            ["availability_slots.id", "availability_slots.doctor_id"],
+            name="fk_consultations_slot_doctor",
+            ondelete="RESTRICT",
+        ),
     )
 
     patient: Mapped["User"] = relationship("User", foreign_keys=[patient_id])
@@ -91,7 +99,10 @@ class Consultation(Base):
         "Doctor", foreign_keys=[doctor_id], back_populates="consultations"
     )
     slot: Mapped["AvailabilitySlot"] = relationship(
-        "AvailabilitySlot", back_populates="consultations"
+        "AvailabilitySlot",
+        back_populates="consultations",
+        foreign_keys=[slot_id],
+        primaryjoin="Consultation.slot_id == AvailabilitySlot.id",
     )
     prescription: Mapped["Prescription | None"] = relationship(
         "Prescription",

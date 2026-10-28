@@ -9,8 +9,9 @@ duplicate side effects (e.g., duplicate appointments, double payments, replayed 
 
 1. **Atomic Single-Transaction Pattern (Recommended for Local DB Writes):**
    - The caller begins a single database transaction (`AsyncSession`).
-   - `claim_or_replay(...)` is invoked. It checks for existing keys and attempts an initial claim
-     using a savepoint (`session.begin_nested()`).
+   - `claim_or_replay(...)` is invoked. It reads any existing key with `SELECT ... FOR UPDATE`
+     (so reclaiming an expired/failed/orphaned key is serialized by a row lock) and otherwise
+     attempts an initial claim using a savepoint (`session.begin_nested()`).
    - If the operation was previously completed with matching payload, the saved response is replayed
      immediately and the outer transaction can exit cleanly without executing business logic.
    - If the claim is new, an `IdempotencyKey` record is staged with `status = "in_progress"`.
@@ -22,6 +23,10 @@ duplicate side effects (e.g., duplicate appointments, double payments, replayed 
    - `record_success(...)` updates the idempotency record to `status = "completed"`.
    - The transaction commits atomically. If any error occurs prior to commit, the entire transaction
      rolls back, releasing the claimed key so the client can fix errors and retry safely.
+     Consequence: error outcomes (e.g. 409 slot unavailable) are NOT cached; a retry with the
+     same key re-evaluates the request against current state.
+   - Because the in-progress row is uncommitted, a concurrent request with the same key blocks on
+     the unique index until the first transaction finishes, then replays the committed outcome.
 
 2. **Two-Phase Transaction Pattern (For External Third-Party APIs / Payments):**
    - Phase 1: Call `claim_or_replay(...)` and commit `in_progress` record in an initial transaction.
@@ -55,18 +60,19 @@ def compute_request_hash(payload: Any) -> str:
     """Compute a deterministic, canonical SHA-256 hex digest for arbitrary request payloads.
 
     Handles None, empty payloads, Pydantic models, JSON strings, bytes, and nested
-    dictionaries/lists with sorted keys and compact separators.
+    dictionaries/lists with sorted keys and compact separators. UTF-8 bytes are decoded and
+    treated exactly like the equivalent ``str`` so both representations hash identically.
     """
+    if isinstance(payload, (bytes, bytearray)):
+        try:
+            payload = bytes(payload).decode("utf-8")
+        except UnicodeDecodeError:
+            return hashlib.sha256(bytes(payload)).hexdigest()
+
     if payload is None:
         normalized: Any = {}
     elif isinstance(payload, BaseModel):
         normalized = payload.model_dump(mode="json")
-    elif isinstance(payload, (bytes, bytearray)):
-        try:
-            decoded = payload.decode("utf-8").strip()
-            normalized = json.loads(decoded) if decoded else {}
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return hashlib.sha256(payload).hexdigest()
     elif isinstance(payload, str):
         stripped = payload.strip()
         if not stripped:
@@ -157,22 +163,25 @@ async def claim_or_replay(
     request_hash = compute_request_hash(payload)
     now = datetime.now(UTC)
 
-    # 1. Query for an existing record scoped to (user_id, key, operation)
-    stmt = select(IdempotencyKey).where(
-        IdempotencyKey.user_id == user_id,
-        IdempotencyKey.key == clean_key,
-        IdempotencyKey.operation == operation,
+    # 1. Query for an existing record scoped to (user_id, key, operation).
+    # FOR UPDATE serializes concurrent reclaims of expired/failed/orphaned records: without the
+    # lock, two retries could both observe a reclaimable row and both execute side effects.
+    stmt = (
+        select(IdempotencyKey)
+        .where(
+            IdempotencyKey.user_id == user_id,
+            IdempotencyKey.key == clean_key,
+            IdempotencyKey.operation == operation,
+        )
+        .with_for_update()
     )
     existing = await session.scalar(stmt)
 
     if existing is not None:
         # Check for record expiration
         if existing.expires_at <= now:
-            logger.info(
-                "Idempotency key '%s' expired at %s. Resetting for fresh claim.",
-                clean_key,
-                existing.expires_at.isoformat(),
-            )
+            # Never log the raw client-supplied key; the record id is sufficient for tracing.
+            logger.info("Idempotency record %s expired; resetting for fresh claim.", existing.id)
             existing.status = IdempotencyStatus.IN_PROGRESS.value
             existing.request_hash = request_hash
             existing.response_code = None
@@ -214,8 +223,8 @@ async def claim_or_replay(
             elapsed = (now - existing.created_at).total_seconds()
             if elapsed > in_progress_timeout:
                 logger.warning(
-                    "Orphaned in-progress idempotency key '%s' (elapsed %.1fs). Reclaiming.",
-                    clean_key,
+                    "Orphaned in-progress idempotency record %s (elapsed %.1fs). Reclaiming.",
+                    existing.id,
                     elapsed,
                 )
                 existing.created_at = now
@@ -278,11 +287,7 @@ async def claim_or_replay(
     except IntegrityError as err:
         # Concurrent race condition: Another transaction committed or claimed the exact same key.
         # The savepoint was automatically rolled back, leaving the outer transaction valid.
-        logger.info(
-            "Concurrent race on key '%s' for user '%s'. Inspecting winner record.",
-            clean_key,
-            user_id,
-        )
+        logger.info("Concurrent idempotency claim race on operation '%s'.", operation)
         winner_stmt = select(IdempotencyKey).where(
             IdempotencyKey.user_id == user_id,
             IdempotencyKey.key == clean_key,
@@ -332,12 +337,21 @@ async def record_success(
     response_body: dict[str, Any] | None = None,
     resource_id: uuid.UUID | None = None,
 ) -> IdempotencyKey:
-    """Transition an in-progress idempotency record to completed with its cached response."""
+    """Transition an in-progress idempotency record to completed with its cached response.
+
+    Only ``in_progress`` records may be completed; this prevents a stale caller from
+    overwriting an outcome that has already been recorded.
+    """
     record = await session.get(IdempotencyKey, record_id)
     if record is None:
         raise ConflictError(
             code="IDEMPOTENCY_RECORD_NOT_FOUND",
             message="The specified idempotency record could not be found to complete.",
+        )
+    if record.status != IdempotencyStatus.IN_PROGRESS.value:
+        raise ConflictError(
+            code="IDEMPOTENCY_INVALID_STATE",
+            message="Only in-progress idempotency records can be completed.",
         )
 
     record.status = IdempotencyStatus.COMPLETED.value
@@ -348,14 +362,14 @@ async def record_success(
     return record
 
 
-async def record_failure(
-    session: AsyncSession,
-    record_id: uuid.UUID,
-    error_message: str | None = None,
-) -> None:
-    """Transition an in-progress idempotency record to failed to allow subsequent retries."""
+async def record_failure(session: AsyncSession, record_id: uuid.UUID) -> None:
+    """Mark an in-progress record as failed so the client may retry (two-phase pattern only).
+
+    Completed records are never downgraded; non in-progress records are left untouched.
+    No error text is stored, so failures cannot leak sensitive request details.
+    """
     record = await session.get(IdempotencyKey, record_id)
-    if record is not None:
+    if record is not None and record.status == IdempotencyStatus.IN_PROGRESS.value:
         record.status = IdempotencyStatus.FAILED.value
         await session.flush()
 
@@ -365,11 +379,12 @@ async def cleanup_expired_keys(
     batch_size: int = 1000,
     now_utc: datetime | None = None,
 ) -> int:
-    """Delete expired idempotency records to prevent unbounded table growth."""
+    """Delete up to ``batch_size`` expired idempotency records (bounded per call)."""
     now = now_utc or datetime.now(UTC)
+    expired_ids = select(IdempotencyKey.id).where(IdempotencyKey.expires_at < now).limit(batch_size)
     delete_stmt = (
         delete(IdempotencyKey)
-        .where(IdempotencyKey.expires_at < now)
+        .where(IdempotencyKey.id.in_(expired_ids))
         .execution_options(synchronize_session=False)
     )
     result = await session.execute(delete_stmt)
