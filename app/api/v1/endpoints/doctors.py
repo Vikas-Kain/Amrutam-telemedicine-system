@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_doctor, require_doctor_or_admin
 from app.core.errors import NotFoundError
+from app.core.rate_limit import rate_limit_write
 from app.db.session import get_db_session
 from app.models.user import User
 from app.schemas.availability import (
@@ -102,6 +103,7 @@ async def list_doctors_endpoint(
 
 @router.post(
     "/me/slots",
+    dependencies=[Depends(rate_limit_write)],
     response_model=list[SlotResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create doctor availability slots",
@@ -137,6 +139,7 @@ async def create_doctor_slots_endpoint(
 
 @router.patch(
     "/me/slots/{slot_id}",
+    dependencies=[Depends(rate_limit_write)],
     response_model=SlotResponse,
     status_code=status.HTTP_200_OK,
     summary="Update doctor availability slot",
@@ -173,6 +176,7 @@ async def update_doctor_slot_endpoint(
 
 @router.delete(
     "/me/slots/{slot_id}",
+    dependencies=[Depends(rate_limit_write)],
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete doctor availability slot",
     description=(

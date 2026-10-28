@@ -27,8 +27,8 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **17** | Audit Logging for Sensitive Operations | `feat: add security audit trail for critical actions` | **Completed & Committed** |
 | **18** | Aggregate Admin Analytics | `feat: add role-protected admin analytics endpoints` | **Completed & Committed** |
 | **19** | Background Jobs & Transactional Outbox | `feat: add reliable background job processing with outbox` | **Completed & Committed** |
-| **20** | Rate Limiting & Resilience Policies | `feat: add API rate limits and bounded resilience policies` | *Next Up* |
-| **21** | Core API & Security Test Coverage | `test: complete core API and security test coverage` | *Planned* |
+| **20** | Rate Limiting & Resilience Policies | `feat: add API rate limits and bounded resilience policies` | **Completed & Ready to Commit** |
+| **21** | Core API & Security Test Coverage | `test: complete core API and security test coverage` | *Next Up* |
 | **22** | Logs, Metrics, Traces & Health Probes | `feat: instrument logs, metrics, traces, and health checks` | *Planned* |
 | **23** | Performance Benchmark & Scaling Scenarios | `test: add performance test scenarios and scaling evidence` | *Planned* |
 | **24** | Container Build & CI Security Hardening | `build: harden container build and CI security checks` | *Planned* |
@@ -1910,6 +1910,86 @@ Per `AGENTS.md`, no commit was created. Review the diff, then run:
 git add alembic/ app/ tests/ docs/ docker-compose.yml PROGRESS.md
 git commit -m "feat: add reliable background job processing with outbox"
 ```
+
+---
+
+## Milestone 20: Rate limiting and resilience policies
+
+**Status:** Completed and verified locally.
+
+- **Configurable Settings (`app/core/config.py` & `.env.example`):**
+  - Added rate limit configuration: `rate_limit_enabled`, `rate_limit_backend` (`memory` or `redis`), `rate_limit_redis_url`.
+  - Added endpoint bucket quotas:
+    - Auth & MFA limits: `rate_limit_auth_requests` (10/60s), `rate_limit_mfa_requests` (10/60s).
+    - Sensitive write limits: `rate_limit_write_requests` (30/60s).
+    - General read limits: `rate_limit_default_requests` (120/60s).
+  - Added payload and pagination limits: `max_request_body_bytes` (1 MB / 1,048,576 bytes), `max_page_size` (100).
+  - Added external HTTP call timeouts: `external_http_connect_timeout_seconds` (3.0s), `external_http_read_timeout_seconds` (5.0s), `external_http_write_timeout_seconds` (5.0s), `external_http_pool_timeout_seconds` (3.0s).
+  - Added database deadlock retry configuration: `db_deadlock_max_retries` (3), `db_deadlock_base_delay` (0.05s), `db_deadlock_max_delay` (0.5s).
+- **Rate Limiting Engine & Backends (`app/core/rate_limit.py`):**
+  - `RateLimiterBackend` abstraction providing `is_allowed`, `areset`, and `close`.
+  - `InMemoryRateLimiter`: Thread-safe and reentrant sliding window log in process memory.
+  - **Local-Only Limitation Documented:** In-memory counters are process-local; in multi-instance or clustered deployments behind load balancers without sticky sessions, counters are not shared across processes. Redis backend should be used for distributed multi-replica deployments.
+  - `RedisRateLimiter`: Distributed sliding window using atomic Redis Sorted Sets (ZSET) pipelines (`ZREMRANGEBYSCORE`, `ZCARD`, `ZRANGE`, `ZADD`, `EXPIRE`). Includes automatic resilience fallback to in-memory limiting if Redis is temporarily unreachable.
+  - Client identifier resolution: Scopes authenticated requests to `user:{user_id}`; scopes anonymous requests to `ip:{client_ip}` (derived from trusted proxy headers or client socket).
+  - Standard headers: Attaches `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` to all responses.
+  - Standard 429 response: Attaches `Retry-After: <seconds>` header and standardized `ErrorResponse(code="RATE_LIMIT_EXCEEDED")`.
+  - Route dependencies: `rate_limit_auth`, `rate_limit_mfa`, `rate_limit_write`, and `rate_limit_default` attached across sensitive auth and write endpoints in `/auth`, `/bookings`, `/consultations`, `/doctors`, and `/payments`.
+- **Request Body & Pagination Limits (`app/core/middleware.py` & `app/core/pagination.py`):**
+  - `RequestBodyLimitMiddleware`: Rejects requests exceeding 1 MB with HTTP 413 Payload Too Large (`PAYLOAD_TOO_LARGE`). Inspects `Content-Length` headers immediately, streams chunked transfers up to limit + 1 byte without buffering unbounded streams, and attaches `X-Request-ID`.
+  - `validate_pagination_bounds` & `PaginationParams`: Enforces `page >= 1` and `1 <= page_size <= 100`. Rejects oversized page sizes with HTTP 422.
+- **External HTTP Resilience & Timeouts (`app/core/http_client.py`):**
+  - `get_http_timeouts` & `create_resilient_http_client`: Wraps `httpx.AsyncClient` with bounded connect, read, write, and pool timeouts.
+  - `execute_http_request_with_retry`: Executes external HTTP calls with bounded retries and exponential backoff with full jitter exclusively for transient conditions (connect timeouts, network drops, HTTP 502/503/504). HTTP 4xx client errors are never retried. Sanitizes logs and raises `ServiceUnavailableError` upon retry exhaustion.
+- **Database Deadlock Transaction Retries (`app/core/retry.py`):**
+  - `is_deadlock_error`: Classifies PostgreSQL deadlocks (SQLSTATE `40P01` `deadlock_detected`, `40001` `serialization_failure`, `DeadlockError`) as transient.
+  - `is_slot_conflict_error`: Strictly classifies slot availability conflicts (`ConflictError`, `SLOT_NOT_AVAILABLE`, `uq_consultations_active_slot`) as permanent. **NEVER RETRIED**.
+  - `is_validation_error` & `is_permission_error`: Classifies validation and authorization errors as permanent. **NEVER RETRIED**.
+  - `execute_transaction_with_deadlock_retry`: Safely reruns the entire transaction a bounded number of times on PostgreSQL deadlocks. Rolls back the session before each retry and applies jitter delay. Raises sanitized `DeadlockRetryExhaustedError` (HTTP 503) without leaking SQL statements, connection URLs, or credentials.
+- **Automated Tests (`tests/test_rate_limiting.py` & `tests/test_resilience.py`):**
+  - Added 27 new tests (12 in `test_rate_limiting.py`, 15 in `test_resilience.py`):
+    - Rate limit headers (`X-RateLimit-*`) on permitted requests.
+    - HTTP 429 response, `Retry-After` header, and error envelope on rate limit breach.
+    - Zero secret or infrastructure detail leaks in 429 and 413 error payloads.
+    - Rate limiting bypass when `rate_limit_enabled=False`.
+    - User ID vs IP address scoping isolation for authenticated and anonymous callers.
+    - Sliding window expiration and bucket reset.
+    - RedisRateLimiter sorted set algorithm and fail-open in-memory resilience fallback.
+    - Request body size rejection (HTTP 413) via `Content-Length` and chunked streaming.
+    - Pagination bounds validation (`page < 1`, `page_size > 100`).
+    - Error classification: deadlocks as transient; slot conflicts, validation errors, and permission errors as non-retryable.
+    - Full transaction rollback and successful rerun on deadlock conflict.
+    - Deadlock retry exhaustion raising sanitized HTTP 503.
+    - Verification that slot conflicts, validation errors, and permission errors are called strictly once and never retried.
+    - External HTTP client bounded timeout configuration.
+    - External HTTP retry on transient 503 and network timeout.
+    - External HTTP immediate termination without retrying 4xx client errors.
+- **Documentation Updates:**
+  - `docs/architecture.md`: Documented Section 7 rate limiting architecture, Redis vs in-memory local-only limitations, external HTTP call timeout bounds, and deadlock transaction retry policy.
+  - `docs/requirements-traceability.md`: Updated Retry and backoff row with Milestone 20 implementation details and test evidence.
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\pytest.exe tests/test_rate_limiting.py -v
+.\.venv\Scripts\pytest.exe tests/test_resilience.py -v
+.\.venv\Scripts\pytest.exe -v
+```
+
+All commands passed (261 total tests).
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add pyproject.toml .env.example app/ tests/ docs/ PROGRESS.md
+git commit -m "feat: add API rate limits and bounded resilience policies"
+```
+
 
 
 

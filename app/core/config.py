@@ -65,6 +65,69 @@ class Settings(BaseSettings):
     # Redis (Optional)
     redis_url: str = Field(default="redis://localhost:6379/0", description="Redis connection URL")
 
+    # Rate Limiting & Resilience
+    rate_limit_enabled: bool = Field(default=True, description="Enable API rate limiting")
+    rate_limit_backend: Literal["memory", "redis"] = Field(
+        default="memory", description="Rate limit backend storage ('memory' or 'redis')"
+    )
+    rate_limit_redis_url: str | None = Field(
+        default=None, description="Redis URL for shared rate limiting (falls back to redis_url)"
+    )
+    rate_limit_auth_requests: int = Field(
+        default=10, description="Allowed auth requests per window"
+    )
+    rate_limit_auth_window_seconds: int = Field(
+        default=60, description="Auth rate limit window duration in seconds"
+    )
+    rate_limit_mfa_requests: int = Field(default=10, description="Allowed MFA requests per window")
+    rate_limit_mfa_window_seconds: int = Field(
+        default=60, description="MFA rate limit window duration in seconds"
+    )
+    rate_limit_write_requests: int = Field(
+        default=30, description="Allowed sensitive write requests per window"
+    )
+    rate_limit_write_window_seconds: int = Field(
+        default=60, description="Sensitive write rate limit window duration in seconds"
+    )
+    rate_limit_default_requests: int = Field(
+        default=120, description="Allowed general read/list requests per window"
+    )
+    rate_limit_default_window_seconds: int = Field(
+        default=60, description="General rate limit window duration in seconds"
+    )
+
+    # Request Body & Pagination Limits
+    max_request_body_bytes: int = Field(
+        default=1_048_576, description="Max allowed request payload size in bytes (1 MB)"
+    )
+    default_page_size: int = Field(default=20, description="Default pagination page size")
+    max_page_size: int = Field(default=100, description="Maximum allowed pagination page size")
+
+    # External HTTP Call Timeouts
+    external_http_connect_timeout_seconds: float = Field(
+        default=3.0, description="Timeout for external HTTP TCP connections"
+    )
+    external_http_read_timeout_seconds: float = Field(
+        default=5.0, description="Timeout for external HTTP responses"
+    )
+    external_http_write_timeout_seconds: float = Field(
+        default=5.0, description="Timeout for external HTTP request writes"
+    )
+    external_http_pool_timeout_seconds: float = Field(
+        default=3.0, description="Timeout for acquiring connection from HTTP pool"
+    )
+
+    # Database Deadlock Retries
+    db_deadlock_max_retries: int = Field(
+        default=3, description="Maximum retry attempts on database deadlock conflict"
+    )
+    db_deadlock_base_delay: float = Field(
+        default=0.05, description="Initial retry delay in seconds for deadlock resolution"
+    )
+    db_deadlock_max_delay: float = Field(
+        default=0.5, description="Ceiling retry delay in seconds for deadlock resolution"
+    )
+
     # Idempotency
     idempotency_default_ttl_seconds: int = Field(
         default=86400, description="Default TTL for idempotency records in seconds (24 hours)"

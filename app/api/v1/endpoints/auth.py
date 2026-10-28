@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.config import get_settings
+from app.core.rate_limit import rate_limit_auth
 from app.core.security import create_access_token
 from app.db.session import get_db_session
 from app.models.user import User
@@ -24,6 +25,7 @@ router = APIRouter()
 
 @router.post(
     "/register",
+    dependencies=[Depends(rate_limit_auth)],
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register a new patient account",
@@ -66,6 +68,7 @@ async def register_patient(
 
 @router.post(
     "/login",
+    dependencies=[Depends(rate_limit_auth)],
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
     summary="Authenticate user and issue access token",

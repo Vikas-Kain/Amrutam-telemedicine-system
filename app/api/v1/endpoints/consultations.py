@@ -13,6 +13,7 @@ from app.api.deps import (
     require_patient,
     require_patient_or_admin,
 )
+from app.core.rate_limit import rate_limit_write
 from app.db.session import get_db_session
 from app.models.user import User
 from app.schemas.consultation import (
@@ -112,6 +113,7 @@ async def get_consultation_endpoint(
 
 @router.post(
     "/{consultation_id}/confirm",
+    dependencies=[Depends(rate_limit_write)],
     response_model=ConsultationResponse,
     status_code=status.HTTP_200_OK,
     summary="Confirm an appointment (booked -> confirmed)",
@@ -142,6 +144,7 @@ async def confirm_consultation_endpoint(
 
 @router.post(
     "/{consultation_id}/start",
+    dependencies=[Depends(rate_limit_write)],
     response_model=ConsultationResponse,
     status_code=status.HTTP_200_OK,
     summary="Begin consultation (confirmed -> in_progress)",
@@ -172,6 +175,7 @@ async def start_consultation_endpoint(
 
 @router.post(
     "/{consultation_id}/complete",
+    dependencies=[Depends(rate_limit_write)],
     response_model=ConsultationResponse,
     status_code=status.HTTP_200_OK,
     summary="Complete consultation (in_progress -> completed)",
@@ -202,6 +206,7 @@ async def complete_consultation_endpoint(
 
 @router.post(
     "/{consultation_id}/no-show",
+    dependencies=[Depends(rate_limit_write)],
     response_model=ConsultationResponse,
     status_code=status.HTTP_200_OK,
     summary="Mark patient no-show (confirmed -> no_show)",
@@ -232,6 +237,7 @@ async def mark_no_show_endpoint(
 
 @router.post(
     "/{consultation_id}/cancel",
+    dependencies=[Depends(rate_limit_write)],
     response_model=ConsultationResponse,
     status_code=status.HTTP_200_OK,
     summary="Cancel an eligible consultation and release its slot",
@@ -266,6 +272,7 @@ async def cancel_consultation_endpoint(
 
 @router.post(
     "/{consultation_id}/prescriptions",
+    dependencies=[Depends(rate_limit_write)],
     response_model=PrescriptionResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Issue or amend prescription for an eligible consultation",
@@ -299,6 +306,7 @@ async def create_prescription_endpoint(
 
 @router.put(
     "/{consultation_id}/prescriptions",
+    dependencies=[Depends(rate_limit_write)],
     response_model=PrescriptionResponse,
     status_code=status.HTTP_200_OK,
     summary="Amend an existing prescription",
@@ -358,6 +366,7 @@ async def get_consultation_prescription_endpoint(
 
 @router.post(
     "/{consultation_id}/payments",
+    dependencies=[Depends(rate_limit_write)],
     response_model=PaymentResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Initiate payment intent for an appointment consultation",

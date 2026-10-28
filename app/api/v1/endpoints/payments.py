@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core.rate_limit import rate_limit_write
 from app.db.session import get_db_session
 from app.models.user import User
 from app.schemas.payment import PaymentResponse, WebhookEventPayload
@@ -45,6 +46,7 @@ async def get_payment_endpoint(
 
 @router.post(
     "/webhooks/{provider}",
+    dependencies=[Depends(rate_limit_write)],
     status_code=status.HTTP_200_OK,
     summary="Process external payment provider webhook callback",
     description=(

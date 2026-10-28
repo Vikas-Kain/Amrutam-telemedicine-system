@@ -150,7 +150,27 @@ Heavy or deferred work (reminders, reporting, notifications) runs in a backgroun
 - **Failure classification & Dead-Letter queue:** Transient errors (network drops, connection timeouts, database serialization conflicts) are retried up to `max_attempts` (default 5). Non-retryable errors (schema bugs, invalid payloads) and exhausted attempts transition directly to `dead_letter` status with the full exception trace recorded in `last_error`.
 - **Payload privacy:** Outbox event payloads contain only minimal resource identifiers (`consultation_id`, `patient_id`, `doctor_id`, `slot_id`, `amount_minor`). Clinical notes, appointment reasons, diagnosis details, prescription items, and card details are never included.
 
-Apply request body limits, rate limits (shared across instances when deployed), database connection pooling, graceful shutdown, and separate liveness/readiness health checks. Readiness should report dependency state appropriately without leaking internals.
+### Rate Limiting & Resilience Policies (Milestone 20)
+- **Sliding Window Rate Limiting:** Configurable rate limiting enforced via FastAPI route dependencies (`app.core.rate_limit.RateLimiter`). Sensitive endpoints are guarded under dedicated buckets:
+  - Auth/MFA (`/api/v1/auth/register`, `/api/v1/auth/login`, etc.): Default 10 requests / 60 seconds.
+  - Sensitive Writes (`/api/v1/bookings`, `/api/v1/payments/*`, cancellations, slot mutations, prescriptions): Default 30 requests / 60 seconds.
+  - Client Identification: Authenticated requests are scoped to `user:{user_id}`; anonymous requests are scoped to `ip:{client_ip}` (derived from trusted proxy headers or client host).
+  - Rate Limit Headers & Responses: Allowed requests receive standard headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`). Exceeded limits return HTTP 429 Too Many Requests with a `Retry-After: <seconds>` header and standardized `ErrorResponse(code="RATE_LIMIT_EXCEEDED")`.
+- **Redis vs In-Memory Storage & Local-Only Limitation:**
+  - `InMemoryRateLimiter`: Thread-safe and reentrant sliding window log maintained in process memory.
+  - **Local-Only Limitation Notice:** In-memory counters are local to each operating system process. When running multiple replica containers or multi-worker processes behind a load balancer without sticky sessions, counters are not shared across processes, allowing aggregate traffic to scale with the replica count.
+  - `RedisRateLimiter`: Uses atomic Redis Sorted Sets (ZSET) pipelines (`ZREMRANGEBYSCORE`, `ZCARD`, `ZRANGE`, `ZADD`, `EXPIRE`) to enforce shared quotas across any number of stateless API replicas. If Redis becomes temporarily unreachable, the adapter fails open to the in-memory fallback to avoid dropping user requests.
+- **Request Body & Pagination Limits:**
+  - `RequestBodyLimitMiddleware`: Rejects request payloads exceeding `settings.max_request_body_bytes` (default 1 MB) with HTTP 413 Payload Too Large (`code="PAYLOAD_TOO_LARGE"`). Checks `Content-Length` headers immediately and streams chunked payloads up to the byte ceiling without buffering unbounded requests into memory.
+  - Standardized Pagination (`app.core.pagination`): Bounded query parameters (`page >= 1`, `1 <= page_size <= 100`). Requests exceeding 100 items per page are rejected with HTTP 422 (`VALIDATION_ERROR`).
+- **External HTTP Call Timeouts & Bounded Retries (`app.core.http_client`):**
+  - All outbound HTTP interactions use explicit bounded timeouts (`connect=3.0s`, `read=5.0s`, `write=5.0s`, `pool=3.0s`) preventing socket leakage and thread exhaustion.
+  - `execute_http_request_with_retry`: Bounded retries with jittered exponential backoff exclusively for transient conditions (connect timeouts, network drops, HTTP 502/503/504). HTTP 4xx client errors (400, 401, 403, 404, 409, 422) are permanent and are never retried.
+- **Database Deadlock Transaction Retries (`app.core.retry`):**
+  - Strict classification rules:
+    - **Deadlocks:** PostgreSQL SQLSTATE `40P01` (`deadlock_detected`) and `40001` (`serialization_failure`) are classified as transient conflicts.
+    - **Non-retryable conditions:** Validation errors (`BadRequestError`), authorization/permission errors (`ForbiddenError`, `UnauthorizedError`), and booking slot conflicts (`ConflictError` e.g. `SLOT_NOT_AVAILABLE`, `uq_consultations_active_slot`) **MUST NEVER BE RETRIED**.
+  - `execute_transaction_with_deadlock_retry`: Safely reruns the entire transaction from the beginning up to `db_deadlock_max_retries` (default 3) attempts. Rolls back the session before each retry attempt and applies decorrelated jitter delay. If attempts exhaust, raises `DeadlockRetryExhaustedError` (HTTP 503) with zero database credentials or internal SQL strings exposed in error messages.
 
 ## 8. Security and privacy
 

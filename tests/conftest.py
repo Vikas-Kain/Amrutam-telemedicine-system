@@ -34,9 +34,13 @@ def client() -> Generator[TestClient, None, None]:
 
 @pytest.fixture(autouse=True)
 async def cleanup_db():
-    """Ensure database singletons and connection pools are cleaned up between test executions."""
+    """Ensure database singletons, connection pools, and rate limiters are cleaned up."""
+    from app.core.rate_limit import reset_rate_limiters_sync
+
+    reset_rate_limiters_sync()
     yield
     from app.db.session import close_database_connections, reset_database_state
 
     await close_database_connections()
     reset_database_state()
+    reset_rate_limiters_sync()

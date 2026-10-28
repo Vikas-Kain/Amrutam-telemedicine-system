@@ -32,7 +32,8 @@ async def app_exception_handler(request: Request, exc: AppException) -> JSONResp
     if exc.details is not None:
         payload["error"]["details"] = exc.details
 
-    return JSONResponse(status_code=exc.status_code, content=payload)
+    headers = dict(exc.headers) if hasattr(exc, "headers") and exc.headers else {}
+    return JSONResponse(status_code=exc.status_code, content=payload, headers=headers or None)
 
 
 async def validation_exception_handler(

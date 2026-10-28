@@ -9,7 +9,10 @@ from app.api.v1.router import api_v1_router
 from app.core.config import get_settings
 from app.core.handlers import register_exception_handlers
 from app.core.logging import setup_logging
-from app.core.middleware import RequestCorrelationIdMiddleware
+from app.core.middleware import (
+    RequestBodyLimitMiddleware,
+    RequestCorrelationIdMiddleware,
+)
 from app.db.session import close_database_connections
 
 
@@ -43,7 +46,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Middleware: Request & Correlation ID propagation
+    # Middleware execution pipeline (Starlette executes in reverse addition order)
+    # 1. RequestCorrelationIdMiddleware (outermost: assigns request_id, sets headers)
+    # 2. RequestBodyLimitMiddleware (rejects oversized bodies before handler execution)
+    app.add_middleware(RequestBodyLimitMiddleware)
     app.add_middleware(RequestCorrelationIdMiddleware)
 
     # Centralized exception handling
