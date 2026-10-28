@@ -13,20 +13,20 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **03** | Settings, Structured Logging & API Error Handling | `feat: add application settings and structured error handling` | **Completed & Committed** |
 | **04** | Local PostgreSQL & Docker Development | `build: add Docker Compose development environment` | **Completed & Committed** |
 | **05** | SQLAlchemy Persistence & Alembic Migrations | `feat: add PostgreSQL persistence and Alembic migrations` | **Completed & Committed** |
-| **06** | Core Database Models | `feat: add core telemedicine database models` | **Implemented (Pending Commit)** |
+| **06** | Core Database Models | `feat: add core telemedicine database models` | **Completed & Committed** |
 | **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | **Completed & Committed** |
-| **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | **Implemented (Pending Commit)** |
+| **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | **Completed & Committed** |
 | **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | **Completed & Committed** |
 | **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | **Completed & Committed** |
 | **11** | Idempotency Storage & Request Handling | `feat: add idempotency key persistence for write requests` | **Completed & Committed** |
 | **12** | Atomic, Concurrency-Safe Booking Workflow | `feat: implement atomic idempotent appointment booking` | **Completed & Committed** |
-| **13** | Booking Retrieval & Cancellation Lifecycle | `feat: add booking retrieval and cancellation lifecycle` | **Implemented (Pending Commit)** |
-| **14** | Consultation Lifecycle State Machine | `feat: enforce consultation lifecycle transitions` | **Implemented (Pending Commit)** |
-| **15** | Prescriptions & Item Authorization | `feat: add prescription and prescription-item workflows` | **Implemented (Pending Commit)** |
-| **16** | Payment Lifecycle & Mock Provider Adapter | `feat: add payment lifecycle with mock provider adapter` | **Implemented (Pending Commit)** |
-| **17** | Audit Logging for Sensitive Operations | `feat: add security audit trail for critical actions` | **Implemented (Pending Commit)** |
-| **18** | Aggregate Admin Analytics | `feat: add role-protected admin analytics endpoints` | **Implemented (Pending Commit)** |
-| **19** | Background Jobs & Transactional Outbox | `feat: add reliable background job processing with outbox` | **Implemented (Pending Commit)** |
+| **13** | Booking Retrieval & Cancellation Lifecycle | `feat: add booking retrieval and cancellation lifecycle` | **Completed & Committed** |
+| **14** | Consultation Lifecycle State Machine | `feat: enforce consultation lifecycle transitions` | **Completed & Committed** |
+| **15** | Prescriptions & Item Authorization | `feat: add prescription and prescription-item workflows` | **Completed & Committed** |
+| **16** | Payment Lifecycle & Mock Provider Adapter | `feat: add payment lifecycle with mock provider adapter` | **Completed & Committed** |
+| **17** | Audit Logging for Sensitive Operations | `feat: add security audit trail for critical actions` | **Completed & Committed** |
+| **18** | Aggregate Admin Analytics | `feat: add role-protected admin analytics endpoints` | **Completed & Committed** |
+| **19** | Background Jobs & Transactional Outbox | `feat: add reliable background job processing with outbox` | **Completed & Committed** |
 | **20** | Rate Limiting & Resilience Policies | `feat: add API rate limits and bounded resilience policies` | *Next Up* |
 | **21** | Core API & Security Test Coverage | `test: complete core API and security test coverage` | *Planned* |
 | **22** | Logs, Metrics, Traces & Health Probes | `feat: instrument logs, metrics, traces, and health checks` | *Planned* |
