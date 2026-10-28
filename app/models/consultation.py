@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -91,6 +92,11 @@ class Consultation(Base):
             ["availability_slots.id", "availability_slots.doctor_id"],
             name="fk_consultations_slot_doctor",
             ondelete="RESTRICT",
+        ),
+        # Check constraint enforcing valid consultation statuses
+        CheckConstraint(
+            "status IN ('booked', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show')",
+            name="chk_consultations_status",
         ),
     )
 

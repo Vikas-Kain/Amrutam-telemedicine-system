@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from app.core.errors import ConflictError
+from app.core.errors import ConflictError, ForbiddenError
 from app.core.security import create_access_token
 from app.db.session import get_db_session, get_session_factory
 from app.main import create_app
@@ -16,7 +16,12 @@ from app.models.outbox import OutboxEvent
 from app.models.user import Profile, User
 from app.schemas.booking import BookingCreateRequest, BookingResponse
 from app.schemas.idempotency import IdempotencyResult, IdempotencyStatus
-from app.services.booking_service import BookingOperationResult, create_booking
+from app.services.booking_service import (
+    BookingOperationResult,
+    cancel_booking,
+    create_booking,
+    get_booking,
+)
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import func, select
@@ -48,11 +53,40 @@ def _make_slot(*, doctor_id: uuid.UUID, status: str = "available") -> Availabili
     )
 
 
+def _make_booking(
+    *,
+    patient_id: uuid.UUID,
+    doctor_id: uuid.UUID,
+    slot_id: uuid.UUID,
+    status: str = "booked",
+) -> Consultation:
+    now = datetime.now(UTC)
+    return Consultation(
+        id=uuid.uuid4(),
+        patient_id=patient_id,
+        doctor_id=doctor_id,
+        slot_id=slot_id,
+        status=status,
+        created_at=now,
+        updated_at=now,
+    )
+
+
 def _claim_result() -> IdempotencyResult:
     return IdempotencyResult(
         is_replayed=False,
         key="booking-key",
         operation="create_booking",
+        status=IdempotencyStatus.IN_PROGRESS,
+        idempotency_record_id=uuid.uuid4(),
+    )
+
+
+def _cancellation_claim_result() -> IdempotencyResult:
+    return IdempotencyResult(
+        is_replayed=False,
+        key="cancellation-key",
+        operation="cancel_booking",
         status=IdempotencyStatus.IN_PROGRESS,
         idempotency_record_id=uuid.uuid4(),
     )
@@ -228,6 +262,198 @@ def test_booking_schema_rejects_an_overlong_reason():
         )
 
 
+@pytest.mark.asyncio
+async def test_get_booking_allows_owner_assigned_doctor_and_admin():
+    """Retrieval grants access only to the patient, assigned doctor, or administrator."""
+    patient = _make_patient()
+    doctor_user = User(
+        id=uuid.uuid4(),
+        email_normalized="assigned-doctor@example.com",
+        password_hash="placeholder",
+        role="doctor",
+    )
+    doctor_id = uuid.uuid4()
+    booking = _make_booking(
+        patient_id=patient.id,
+        doctor_id=doctor_id,
+        slot_id=uuid.uuid4(),
+    )
+
+    owner_session = AsyncMock()
+    owner_session.scalar.return_value = booking
+    assert (
+        await get_booking(session=owner_session, booking_id=booking.id, current_user=patient)
+    ).id == booking.id
+
+    doctor_session = AsyncMock()
+    doctor_session.scalar.side_effect = [booking, doctor_id]
+    assert (
+        await get_booking(session=doctor_session, booking_id=booking.id, current_user=doctor_user)
+    ).id == booking.id
+
+    admin = User(
+        id=uuid.uuid4(),
+        email_normalized="admin@example.com",
+        password_hash="placeholder",
+        role="admin",
+    )
+    admin_session = AsyncMock()
+    admin_session.scalar.return_value = booking
+    assert (
+        await get_booking(session=admin_session, booking_id=booking.id, current_user=admin)
+    ).id == booking.id
+
+
+@pytest.mark.asyncio
+async def test_get_booking_rejects_unrelated_patient():
+    """A patient cannot read another patient's booking."""
+    owner = _make_patient()
+    other = User(
+        id=uuid.uuid4(),
+        email_normalized="other-patient@example.com",
+        password_hash="placeholder",
+        role="patient",
+    )
+    booking = _make_booking(
+        patient_id=owner.id,
+        doctor_id=uuid.uuid4(),
+        slot_id=uuid.uuid4(),
+    )
+    session = AsyncMock()
+    session.scalar.return_value = booking
+
+    with pytest.raises(ForbiddenError) as error:
+        await get_booking(session=session, booking_id=booking.id, current_user=other)
+
+    assert error.value.code == "BOOKING_ACCESS_FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_cancel_booking_atomically_releases_slot_and_emits_safe_event():
+    """Cancellation preserves history while returning the future slot to availability."""
+    patient = _make_patient()
+    doctor_id = uuid.uuid4()
+    slot = _make_slot(doctor_id=doctor_id, status="booked")
+    booking = _make_booking(patient_id=patient.id, doctor_id=doctor_id, slot_id=slot.id)
+    added: list[object] = []
+    completed: dict[str, object] = {}
+    session = AsyncMock()
+    session.scalar.side_effect = [booking, slot]
+    session.begin_nested = MagicMock(return_value=_async_context_manager())
+    session.add = MagicMock(side_effect=added.append)
+
+    async def complete(**kwargs: object) -> None:
+        completed.update(kwargs)
+
+    with (
+        patch(
+            "app.services.booking_service.claim_or_replay",
+            new=AsyncMock(return_value=_cancellation_claim_result()),
+        ),
+        patch("app.services.booking_service.record_success", new=AsyncMock(side_effect=complete)),
+    ):
+        result = await cancel_booking(
+            session=session,
+            booking_id=booking.id,
+            current_user=patient,
+            idempotency_key="cancellation-key",
+        )
+
+    assert result.booking.status == "cancelled"
+    assert booking.status == "cancelled"
+    assert slot.status == "available"
+    assert completed["response_code"] == 200
+    event = next(item for item in added if isinstance(item, OutboxEvent))
+    assert event.event_type == "booking.cancelled"
+    assert "reason" not in event.payload
+
+
+@pytest.mark.asyncio
+async def test_cancel_booking_is_idempotent_when_already_cancelled():
+    """A fresh retry against historical cancelled state remains a successful no-op."""
+    patient = _make_patient()
+    booking = _make_booking(
+        patient_id=patient.id,
+        doctor_id=uuid.uuid4(),
+        slot_id=uuid.uuid4(),
+        status="cancelled",
+    )
+    session = AsyncMock()
+    session.scalar.return_value = booking
+    completed: dict[str, object] = {}
+
+    async def complete(**kwargs: object) -> None:
+        completed.update(kwargs)
+
+    with (
+        patch(
+            "app.services.booking_service.claim_or_replay",
+            new=AsyncMock(return_value=_cancellation_claim_result()),
+        ),
+        patch("app.services.booking_service.record_success", new=AsyncMock(side_effect=complete)),
+    ):
+        result = await cancel_booking(
+            session=session,
+            booking_id=booking.id,
+            current_user=patient,
+            idempotency_key="new-cancellation-key",
+        )
+
+    assert result.booking.status == "cancelled"
+    assert completed["response_code"] == 200
+    session.begin_nested.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cancel_booking_rejects_another_patient_and_ineligible_state():
+    """Only the owner/admin may cancel, and only the booked lifecycle state is eligible."""
+    owner = _make_patient()
+    other = User(
+        id=uuid.uuid4(),
+        email_normalized="other-canceller@example.com",
+        password_hash="placeholder",
+        role="patient",
+    )
+    booking = _make_booking(
+        patient_id=owner.id,
+        doctor_id=uuid.uuid4(),
+        slot_id=uuid.uuid4(),
+    )
+    ownership_session = AsyncMock()
+    ownership_session.scalar.return_value = booking
+    with (
+        patch(
+            "app.services.booking_service.claim_or_replay",
+            new=AsyncMock(return_value=_cancellation_claim_result()),
+        ),
+        pytest.raises(ForbiddenError),
+    ):
+        await cancel_booking(
+            session=ownership_session,
+            booking_id=booking.id,
+            current_user=other,
+            idempotency_key="cancellation-key",
+        )
+
+    booking.status = "confirmed"
+    state_session = AsyncMock()
+    state_session.scalar.return_value = booking
+    with (
+        patch(
+            "app.services.booking_service.claim_or_replay",
+            new=AsyncMock(return_value=_cancellation_claim_result()),
+        ),
+        pytest.raises(ConflictError) as error,
+    ):
+        await cancel_booking(
+            session=state_session,
+            booking_id=booking.id,
+            current_user=owner,
+            idempotency_key="cancellation-key",
+        )
+    assert error.value.code == "BOOKING_CANCELLATION_NOT_ALLOWED"
+
+
 def test_booking_endpoint_requires_patient_and_idempotency_key():
     """The public endpoint denies non-patients and rejects a missing idempotency header."""
     doctor = User(
@@ -295,11 +521,11 @@ def test_booking_endpoint_returns_200_for_a_replay():
     app.dependency_overrides[get_db_session] = lambda: session
     token = create_access_token(subject=patient.id, role="patient")
 
+    client = TestClient(app)
     with patch(
         "app.api.v1.endpoints.bookings.create_booking",
         new=AsyncMock(return_value=BookingOperationResult(booking=booking, is_replayed=True)),
     ):
-        client = TestClient(app)
         response = client.post(
             "/api/v1/bookings",
             json={"doctor_id": str(doctor_id), "slot_id": str(slot_id)},
@@ -308,6 +534,65 @@ def test_booking_endpoint_returns_200_for_a_replay():
 
     assert response.status_code == 200
     assert response.json()["id"] == str(booking.id)
+
+
+def test_booking_retrieval_endpoint_uses_authenticated_access_policy():
+    """GET booking is registered and delegates to the scoped retrieval service."""
+    patient = _make_patient()
+    doctor_id = uuid.uuid4()
+    booking = _make_booking(patient_id=patient.id, doctor_id=doctor_id, slot_id=uuid.uuid4())
+    session = AsyncMock()
+    session.scalar.side_effect = [patient, booking]
+    app = create_app()
+    app.dependency_overrides[get_db_session] = lambda: session
+    token = create_access_token(subject=patient.id, role="patient")
+
+    client = TestClient(app)
+    response = client.get(
+        f"/api/v1/bookings/{booking.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(booking.id)
+
+
+def test_booking_cancellation_endpoint_requires_key_and_returns_cancelled_booking():
+    """POST cancellation enforces idempotency and exposes a successful cancelled result."""
+    patient = _make_patient()
+    booking = _make_booking(
+        patient_id=patient.id,
+        doctor_id=uuid.uuid4(),
+        slot_id=uuid.uuid4(),
+        status="cancelled",
+    )
+    response_model = BookingResponse.model_validate(booking)
+    session = AsyncMock()
+    session.scalar.return_value = patient
+    app = create_app()
+    app.dependency_overrides[get_db_session] = lambda: session
+    token = create_access_token(subject=patient.id, role="patient")
+    client = TestClient(app)
+
+    missing_key = client.post(
+        f"/api/v1/bookings/{booking.id}/cancel",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert missing_key.status_code == 400
+
+    with patch(
+        "app.api.v1.endpoints.bookings.cancel_booking",
+        new=AsyncMock(
+            return_value=BookingOperationResult(booking=response_model, is_replayed=False)
+        ),
+    ):
+        response = client.post(
+            f"/api/v1/bookings/{booking.id}/cancel",
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "cancel-key"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
 
 
 @pytest.mark.skipif(
@@ -412,3 +697,134 @@ async def test_live_postgres_competing_patients_create_one_booking_and_one_outbo
         assert consultation_count == 1
         assert event_count == 1
         assert slot is not None and slot.status == "booked"
+
+
+@pytest.mark.skipif(
+    not is_postgres_available(),
+    reason="Live PostgreSQL instance not reachable; run via Docker Compose or in CI",
+)
+@pytest.mark.asyncio
+async def test_live_postgres_cancellation_preserves_history_and_allows_rebooking():
+    """Cancelling is atomic, repeat-safe, and frees the partial unique active-slot constraint."""
+    suffix = uuid.uuid4().hex[:8]
+    factory = get_session_factory()
+    doctor_user_id = uuid.uuid4()
+    doctor_id = uuid.uuid4()
+    owner_id = uuid.uuid4()
+    rebooking_patient_id = uuid.uuid4()
+    slot_id = uuid.uuid4()
+    original_booking_id = uuid.uuid4()
+    cancellation_key = f"cancel-{suffix}"
+
+    async with factory() as session:
+        session.add_all(
+            [
+                User(
+                    id=doctor_user_id,
+                    email_normalized=f"cancel_doc_{suffix}@example.test",
+                    password_hash="placeholder",
+                    role="doctor",
+                ),
+                User(
+                    id=owner_id,
+                    email_normalized=f"cancel_owner_{suffix}@example.test",
+                    password_hash="placeholder",
+                    role="patient",
+                ),
+                User(
+                    id=rebooking_patient_id,
+                    email_normalized=f"cancel_rebook_{suffix}@example.test",
+                    password_hash="placeholder",
+                    role="patient",
+                ),
+            ]
+        )
+        session.add(Profile(user_id=doctor_user_id, full_name="Cancellation Doctor"))
+        session.add(
+            Doctor(
+                id=doctor_id,
+                user_id=doctor_user_id,
+                specialization="General Medicine",
+                license_number=f"CANCEL-{suffix}",
+                is_verified=True,
+                consultation_fee_minor=1_000,
+            )
+        )
+        now = datetime.now(UTC)
+        session.add(
+            AvailabilitySlot(
+                id=slot_id,
+                doctor_id=doctor_id,
+                start_at=now + timedelta(days=2),
+                end_at=now + timedelta(days=2, minutes=30),
+                status="booked",
+            )
+        )
+        session.add(
+            Consultation(
+                id=original_booking_id,
+                patient_id=owner_id,
+                doctor_id=doctor_id,
+                slot_id=slot_id,
+                status="booked",
+            )
+        )
+        await session.commit()
+
+    async with factory() as session:
+        owner = await session.get(User, owner_id)
+        assert owner is not None
+        cancelled = await cancel_booking(
+            session=session,
+            booking_id=original_booking_id,
+            current_user=owner,
+            idempotency_key=cancellation_key,
+        )
+        assert cancelled.booking.status == "cancelled"
+        await session.commit()
+
+    async with factory() as session:
+        owner = await session.get(User, owner_id)
+        assert owner is not None
+        replay = await cancel_booking(
+            session=session,
+            booking_id=original_booking_id,
+            current_user=owner,
+            idempotency_key=cancellation_key,
+        )
+        assert replay.is_replayed is True
+        assert replay.booking.status == "cancelled"
+        await session.rollback()
+
+    async with factory() as session:
+        rebooking_patient = await session.get(User, rebooking_patient_id)
+        assert rebooking_patient is not None
+        replacement = await create_booking(
+            session=session,
+            patient=rebooking_patient,
+            payload=BookingCreateRequest(doctor_id=doctor_id, slot_id=slot_id),
+            idempotency_key=f"rebook-{suffix}",
+        )
+        assert replacement.booking.status == "booked"
+        await session.commit()
+
+    async with factory() as session:
+        consultations = (
+            await session.scalars(
+                select(Consultation)
+                .where(Consultation.slot_id == slot_id)
+                .order_by(Consultation.created_at)
+            )
+        ).all()
+        slot = await session.get(AvailabilitySlot, slot_id)
+        cancellation_events = await session.scalar(
+            select(func.count())
+            .select_from(OutboxEvent)
+            .where(
+                OutboxEvent.aggregate_id == original_booking_id,
+                OutboxEvent.event_type == "booking.cancelled",
+            )
+        )
+        assert [consultation.status for consultation in consultations] == ["cancelled", "booked"]
+        assert slot is not None and slot.status == "booked"
+        assert cancellation_events == 1

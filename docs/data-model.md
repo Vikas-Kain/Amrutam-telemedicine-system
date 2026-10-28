@@ -51,7 +51,7 @@ This document specifies the logical data model for the Amrutam Telemedicine Back
     - `'available'`: Open for appointment booking by patients.
     - `'booked'`: Reserved for an active consultation; protected from deletion or modification by the doctor.
     - `'blocked'`: Administratively blocked by the doctor; ineligible for appointment booking.
-  - Cancellation & Reuse: When an active consultation occupying a slot is cancelled, the slot transition back to `'available'` must occur atomically within the same database transaction.
+  - Cancellation & Reuse: A future consultation in the `'booked'` state may be cancelled by its owning patient or an administrator. The consultation is retained with status `'cancelled'` and the slot transition back to `'available'` occurs atomically within the same database transaction. A cancelled slot can be rebooked because the active-consultation unique index excludes cancelled records.
 
 
 ### consultations
@@ -64,6 +64,7 @@ This document specifies the logical data model for the Amrutam Telemedicine Back
 - `created_at`, `updated_at`: TIMESTAMPTZ, non-null.
 - **Constraints:**
   - Partial unique index: `UNIQUE (slot_id) WHERE status NOT IN ('cancelled')` to guarantee no double-booking at the database level.
+  - Check constraint: `chk_consultations_status` enforces `status IN ('booked', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show')`.
   - Composite foreign key `(slot_id, doctor_id)` → `availability_slots(id, doctor_id)` (`fk_consultations_slot_doctor`) prevents pairing a consultation with a doctor other than the slot owner.
   - Foreign keys ensure referential integrity with patient, doctor, and slot.
 
@@ -140,7 +141,7 @@ This document specifies the logical data model for the Amrutam Telemedicine Back
 3. **Availability ownership:** Only the owning doctor (or admin) can create, modify, or block their availability slots.
 4. **Slot assignment integrity:** A consultation cannot pair a slot with a doctor other than the slot's owner.
 5. **Atomic booking exclusivity:** Exactly one active consultation may occupy a slot (`SELECT ... FOR UPDATE` + partial unique index).
-6. **Cancellation consistency:** Cancellation releases slot status atomically within the same database transaction.
+6. **Cancellation consistency:** Only an eligible future `booked` consultation may be cancelled; cancellation preserves its historical record and releases slot status atomically within the same database transaction.
 7. **Idempotency replay:** Replayed identical requests return original results; mismatched payloads return `409 Conflict`.
 8. **Consultation state machine:** Consultations only follow allowed forward transitions (`booked` → `confirmed` → `in_progress` → `completed`).
 9. **Prescription authorization:** Prescriptions can only be authored by the assigned doctor for completed/in-progress consultations.

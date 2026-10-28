@@ -164,7 +164,7 @@ def test_alembic_configuration_wired_to_settings():
     heads = script.get_heads()
 
     assert len(heads) == 1
-    assert heads[0] == "0005_consultation_slot_doctor_fk"
+    assert heads[0] == "0006_consultation_status_chk"
 
 
 def test_alembic_offline_migration_sql_generation(capsys):

@@ -18,11 +18,11 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | **Implemented (Pending Commit)** |
 | **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | **Completed & Committed** |
 | **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | **Completed & Committed** |
-| **11** | Idempotency Storage & Request Handling | `feat: add idempotency key persistence for write requests` | **Implemented (Pending Commit)** |
-| **12** | Atomic, Concurrency-Safe Booking Workflow | `feat: implement atomic idempotent appointment booking` | *Next Up* |
-| **13** | Booking Retrieval & Cancellation Lifecycle | `feat: add booking retrieval and cancellation lifecycle` | *Planned* |
-| **14** | Consultation Lifecycle State Machine | `feat: enforce consultation lifecycle transitions` | *Planned* |
-| **15** | Prescriptions & Item Authorization | `feat: add prescription and prescription-item workflows` | *Planned* |
+| **11** | Idempotency Storage & Request Handling | `feat: add idempotency key persistence for write requests` | **Completed & Committed** |
+| **12** | Atomic, Concurrency-Safe Booking Workflow | `feat: implement atomic idempotent appointment booking` | **Completed & Committed** |
+| **13** | Booking Retrieval & Cancellation Lifecycle | `feat: add booking retrieval and cancellation lifecycle` | **Implemented (Pending Commit)** |
+| **14** | Consultation Lifecycle State Machine | `feat: enforce consultation lifecycle transitions` | **Implemented (Pending Commit)** |
+| **15** | Prescriptions & Item Authorization | `feat: add prescription and prescription-item workflows` | *Next Up* |
 | **16** | Payment Lifecycle & Mock Provider Adapter | `feat: add payment lifecycle with mock provider adapter` | *Planned* |
 | **17** | Audit Logging for Sensitive Operations | `feat: add audit logging for sensitive operations` | *Planned* |
 | **18** | Aggregate Admin Analytics | `feat: add aggregate admin analytics` | *Planned* |
@@ -1497,6 +1497,101 @@ Per `AGENTS.md`, no commit was created. Review the diff, then run:
 ```powershell
 git add alembic/ app/ tests/ docs/ PROGRESS.md
 git commit -m "feat: implement atomic idempotent appointment booking"
+```
+
+---
+
+## Milestone 13: Booking retrieval and cancellation lifecycle
+
+**Status:** Implemented and verified on local PostgreSQL.
+
+- Added `GET /api/v1/bookings/{booking_id}` with service-enforced access for the owning patient,
+  assigned doctor, or administrator.
+- Added idempotent `POST /api/v1/bookings/{booking_id}/cancel`. It requires an
+  `Idempotency-Key`; patients may cancel only their own future bookings in the `booked` state,
+  while administrators may perform the same operational action.
+- Cancellation preserves the consultation as `cancelled`, atomically returns its slot to
+  `available`, stores the idempotent response, and persists a minimal `booking.cancelled` outbox
+  event. A repeat cancellation returns the historical cancelled representation without a second
+  event.
+- No migration was required: the existing `cancelled` state and partial active-consultation index
+  already permit a released slot to be rebooked while retaining booking history.
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\pytest.exe tests/test_bookings.py -q
+.\.venv\Scripts\pytest.exe -q
+.\.venv\Scripts\alembic.exe upgrade head
+```
+
+All commands passed (157 tests). The full suite emits the existing Starlette TestClient deprecation
+warning for the installed HTTPX integration.
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add app/ tests/ docs/ PROGRESS.md
+git commit -m "feat: add booking retrieval and cancellation lifecycle"
+```
+
+---
+
+## Milestone 14: Consultation lifecycle state machine
+
+**Status:** Implemented and verified on local PostgreSQL.
+
+- Created Alembic migration `0006_consultation_status_chk.py` adding check constraint `chk_consultations_status`
+  enforcing valid consultation lifecycle statuses (`booked`, `confirmed`, `in_progress`, `completed`,
+  `cancelled`, `no_show`) at the database level.
+- Created `app/services/audit_service.py` exposing `record_audit_event` for recording tamper-evident audit
+  logs in the active transaction without logging PHI or sensitive request bodies.
+- Created `app/schemas/consultation.py` defining `ConsultationStatus` enum, `ConsultationResponse`, and
+  bounded `ConsultationListResponse`.
+- Implemented `app/services/consultation_service.py` providing:
+  - `list_consultations`: strictly role-scoped (patients see only their own consultations, doctors see
+    only assigned clinical appointments, admins view all with optional filters), supporting validated status
+    filtering, deterministic sorting (`created_at DESC, id DESC`), and bounded pagination.
+  - `get_consultation`: strictly authorizes patient owner, assigned doctor, or administrator.
+  - `transition_consultation`: row-locking (`SELECT ... FOR UPDATE`) state machine enforcing allowed forward
+    transitions (`booked` → `confirmed` → `in_progress` → `completed`, plus `confirmed` → `no_show`). Prevents
+    clients from setting arbitrary statuses. Rejects cross-user or illegal transitions with 403/409, and enqueues
+    an `OutboxEvent` and `AuditLog` within the same transaction.
+- Implemented `app/api/v1/endpoints/consultations.py` mounting:
+  - `GET /api/v1/consultations` (scoped listing)
+  - `GET /api/v1/consultations/{id}` (authorized retrieval)
+  - `POST /api/v1/consultations/{id}/confirm` (doctor/admin: booked → confirmed)
+  - `POST /api/v1/consultations/{id}/start` (assigned doctor: confirmed → in_progress)
+  - `POST /api/v1/consultations/{id}/complete` (assigned doctor: in_progress → completed)
+  - `POST /api/v1/consultations/{id}/no-show` (doctor/admin: confirmed → no_show)
+  - `POST /api/v1/consultations/{id}/cancel` (owner/admin: booked → cancelled with atomic slot release)
+- Added `tests/test_consultations.py` with 27 unit and PostgreSQL integration tests verifying every allowed
+  transition, rejected transition, cross-user denial, audit/outbox emission, concurrent transition serialization,
+  and database status check constraint enforcement.
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\pytest.exe tests/test_consultations.py -v
+.\.venv\Scripts\pytest.exe -v
+```
+
+All commands passed (184 total tests).
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add alembic/ app/ tests/ docs/ PROGRESS.md
+git commit -m "feat: enforce consultation lifecycle transitions"
 ```
 
 

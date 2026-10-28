@@ -6,6 +6,7 @@ rolls back on an exception.  The idempotency record, slot mutation, consultation
 event therefore commit (or roll back) together.
 """
 
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -13,15 +14,16 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 from app.models.consultation import Consultation
-from app.models.doctor import AvailabilitySlot
+from app.models.doctor import AvailabilitySlot, Doctor
 from app.models.outbox import OutboxEvent
 from app.models.user import User
 from app.schemas.booking import BookingCreateRequest, BookingResponse
 from app.services.idempotency_service import claim_or_replay, record_success
 
 BOOKING_OPERATION = "create_booking"
+CANCELLATION_OPERATION = "cancel_booking"
 
 
 @dataclass(frozen=True)
@@ -41,6 +43,55 @@ def _is_active_booking_constraint(error: IntegrityError) -> bool:
     """Return whether an integrity error came from the active-slot unique index."""
     diagnostics = getattr(getattr(error, "orig", None), "diag", None)
     return getattr(diagnostics, "constraint_name", None) == "uq_consultations_active_slot"
+
+
+async def _authorize_booking_access(
+    *,
+    session: AsyncSession,
+    booking: Consultation,
+    current_user: User,
+) -> None:
+    """Enforce booking retrieval/cancellation policy without relying on route names alone."""
+    if current_user.role == "admin":
+        return
+    if current_user.role == "patient" and booking.patient_id == current_user.id:
+        return
+    if current_user.role == "doctor":
+        doctor_id = await session.scalar(select(Doctor.id).where(Doctor.user_id == current_user.id))
+        if doctor_id == booking.doctor_id:
+            return
+    raise ForbiddenError(
+        message="You do not have permission to access this booking.",
+        code="BOOKING_ACCESS_FORBIDDEN",
+    )
+
+
+async def get_booking(
+    *,
+    session: AsyncSession,
+    booking_id: uuid.UUID,
+    current_user: User,
+) -> BookingResponse:
+    """Return a booking only to its patient, assigned doctor, or an administrator."""
+    booking = await session.scalar(select(Consultation).where(Consultation.id == booking_id))
+    if booking is None:
+        raise NotFoundError(message="Booking not found.", code="BOOKING_NOT_FOUND")
+    await _authorize_booking_access(session=session, booking=booking, current_user=current_user)
+    return BookingResponse.model_validate(booking)
+
+
+async def _replay_booking_result(idempotency_response: object) -> BookingOperationResult:
+    """Convert a completed idempotency outcome to a typed booking response."""
+    response_body = getattr(idempotency_response, "response_body", None)
+    if response_body is None:
+        raise ConflictError(
+            code="IDEMPOTENCY_REPLAY_UNAVAILABLE",
+            message="The original booking outcome cannot be replayed. Please contact support.",
+        )
+    return BookingOperationResult(
+        booking=BookingResponse.model_validate(response_body),
+        is_replayed=True,
+    )
 
 
 async def create_booking(
@@ -65,16 +116,7 @@ async def create_booking(
     )
 
     if idempotency.is_replayed:
-        if idempotency.response_body is None:
-            # A completed record without an outcome is corrupt and must not cause a duplicate.
-            raise ConflictError(
-                code="IDEMPOTENCY_REPLAY_UNAVAILABLE",
-                message="The original booking outcome cannot be replayed. Please contact support.",
-            )
-        return BookingOperationResult(
-            booking=BookingResponse.model_validate(idempotency.response_body),
-            is_replayed=True,
-        )
+        return await _replay_booking_result(idempotency)
 
     # The idempotency claim is deliberately in the same transaction as the slot reservation.
     # This locks the specific row before observing its state, so two patients cannot both book it.
@@ -139,5 +181,96 @@ async def create_booking(
                 code="SLOT_NOT_AVAILABLE",
             ) from error
         raise
+
+    return BookingOperationResult(booking=response, is_replayed=False)
+
+
+async def cancel_booking(
+    *,
+    session: AsyncSession,
+    booking_id: uuid.UUID,
+    current_user: User,
+    idempotency_key: str,
+) -> BookingOperationResult:
+    """Cancel an eligible booking and release its slot in the same transaction.
+
+    Patients may cancel only their own future, ``booked`` consultations; administrators may
+    perform the same operational action. A previously cancelled consultation is preserved and
+    returned as a successful idempotent result. Assigned doctors may read a booking but cannot
+    cancel it in this milestone.
+    """
+    idempotency = await claim_or_replay(
+        session=session,
+        user_id=current_user.id,
+        key=idempotency_key,
+        operation=CANCELLATION_OPERATION,
+        payload={"booking_id": str(booking_id)},
+    )
+    if idempotency.is_replayed:
+        return await _replay_booking_result(idempotency)
+
+    booking = await session.scalar(
+        select(Consultation).where(Consultation.id == booking_id).with_for_update()
+    )
+    if booking is None:
+        raise NotFoundError(message="Booking not found.", code="BOOKING_NOT_FOUND")
+    await _authorize_booking_access(session=session, booking=booking, current_user=current_user)
+
+    if booking.status == "cancelled":
+        response = BookingResponse.model_validate(booking)
+        await record_success(
+            session=session,
+            record_id=idempotency.idempotency_record_id,
+            response_code=200,
+            response_body=response.model_dump(mode="json"),
+            resource_id=booking.id,
+        )
+        return BookingOperationResult(booking=response, is_replayed=False)
+    if booking.status != "booked":
+        raise ConflictError(
+            message="Only bookings that have not progressed beyond booked can be cancelled.",
+            code="BOOKING_CANCELLATION_NOT_ALLOWED",
+        )
+
+    slot = await session.scalar(
+        select(AvailabilitySlot).where(AvailabilitySlot.id == booking.slot_id).with_for_update()
+    )
+    if slot is None or slot.doctor_id != booking.doctor_id or slot.status != "booked":
+        raise ConflictError(
+            message="The booking slot is not in a cancellable state.",
+            code="BOOKING_SLOT_STATE_INCONSISTENT",
+        )
+    if slot.start_at <= datetime.now(UTC):
+        raise ConflictError(
+            message="A booking cannot be cancelled after its slot has started.",
+            code="BOOKING_CANCELLATION_WINDOW_CLOSED",
+        )
+
+    async with session.begin_nested():
+        booking.status = "cancelled"
+        slot.status = "available"
+        await session.flush()
+
+        response = BookingResponse.model_validate(booking)
+        await record_success(
+            session=session,
+            record_id=idempotency.idempotency_record_id,
+            response_code=200,
+            response_body=response.model_dump(mode="json"),
+            resource_id=booking.id,
+        )
+        session.add(
+            OutboxEvent(
+                event_type="booking.cancelled",
+                aggregate_type="consultation",
+                aggregate_id=booking.id,
+                payload={
+                    "consultation_id": str(booking.id),
+                    "doctor_id": str(booking.doctor_id),
+                    "slot_id": str(booking.slot_id),
+                },
+            )
+        )
+        await session.flush()
 
     return BookingOperationResult(booking=response, is_replayed=False)

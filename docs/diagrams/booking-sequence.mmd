@@ -36,3 +36,23 @@ sequenceDiagram
     end
 
     Note over Svc,DB: No network call or event dispatch occurs while the slot lock is held.
+
+    rect rgb(245, 247, 250)
+        Patient->>API: POST /api/v1/bookings/{id}/cancel + Idempotency-Key
+        API->>Svc: cancel_booking(booking_id, actor, key)
+        Svc->>DB: BEGIN and claim/read cancellation key
+        Svc->>DB: Lock consultation, authorize owner/admin, then lock slot
+        alt Previously cancelled or matching completed key
+            DB-->>Svc: Existing cancelled response
+            Svc-->>API: Idempotent cancellation result
+            API-->>Patient: 200 OK
+        else Future booked consultation
+            Svc->>DB: Set consultation cancelled + slot available
+            Svc->>DB: Store response + booking.cancelled outbox event
+            Svc->>DB: COMMIT
+            API-->>Patient: 200 OK
+        else Ineligible state or unauthorized actor
+            Svc->>DB: ROLLBACK
+            API-->>Patient: 403 / 409 error
+        end
+    end

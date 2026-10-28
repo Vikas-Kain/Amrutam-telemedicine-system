@@ -47,7 +47,7 @@ Prefix: `/api/v1`. The service exposes a REST API with OpenAPI specification aut
 |---|---|---|---|
 | POST | `/api/v1/bookings` | Patient (`Idempotency-Key` required) | Atomically reserve slot and create consultation |
 | GET | `/api/v1/bookings/{booking_id}` | Owner / Assigned Doctor / Admin | Retrieve booking status and details |
-| POST | `/api/v1/bookings/{booking_id}/cancel` | Booking Owner / Admin | Cancel booking and release slot back to available |
+| POST | `/api/v1/bookings/{booking_id}/cancel` | Booking Owner / Admin (`Idempotency-Key` required) | Cancel an eligible booking and release its slot atomically |
 | GET | `/api/v1/consultations` | Patient / Doctor scoped | List consultations filtered by caller's identity |
 | GET | `/api/v1/consultations/{id}` | Patient / Assigned Doctor / Admin | Get consultation detail and medical record summary |
 | POST | `/api/v1/consultations/{id}/confirm` | Assigned Doctor | Confirm appointment (`booked` → `confirmed`) |
@@ -62,6 +62,26 @@ characters. It returns the created consultation (`id`, `patient_id`, `doctor_id`
 completed retry returns the exact stored representation with `200 OK`; a reused key with a changed
 body, a slot owned by a different doctor, or an unavailable slot returns `409 Conflict`. Booking
 is limited to future slots whose status is `available`.
+
+Cancellation is permitted only while a consultation remains `booked` and its slot has not started.
+The owning patient or an administrator may cancel; an assigned doctor may retrieve but cannot
+cancel the booking. The cancelled consultation remains in the record, its slot moves back to
+`available` in the same transaction, and a repeated cancellation returns the existing cancelled
+representation with `200 OK`. `POST /api/v1/consultations/{id}/cancel` provides the same atomic
+cancellation functionality within the consultations namespace.
+
+### Consultation Lifecycle State Transitions
+Consultations enforce an explicit forward-only state machine:
+- `booked` → `confirmed`: Triggered by the assigned doctor or admin via `POST /api/v1/consultations/{id}/confirm`.
+- `confirmed` → `in_progress`: Triggered by the assigned doctor via `POST /api/v1/consultations/{id}/start`.
+- `in_progress` → `completed`: Triggered by the assigned doctor via `POST /api/v1/consultations/{id}/complete`.
+- `confirmed` → `no_show`: Triggered by the assigned doctor or admin via `POST /api/v1/consultations/{id}/no-show`.
+- `booked` → `cancelled`: Triggered by the patient owner or admin via `POST /api/v1/bookings/{id}/cancel` or `POST /api/v1/consultations/{id}/cancel`.
+
+Any transition outside this matrix (e.g. `booked` → `completed` or transitioning from terminal states `completed`, `cancelled`, `no_show`) returns `409 Conflict`. Simultaneous transitions are serialized via `SELECT ... FOR UPDATE` so conflicting updates cannot silently overwrite each other. Every transition enqueues an outbox event and records an audit log.
+
+`GET /api/v1/consultations` accepts optional query parameters `status` (validated against allowed statuses), `patient_id` (admin only), `doctor_id` (admin only), `page`, and `page_size`. Non-admins have results automatically restricted to their own appointments or assigned clinical consultations.
+
 
 ## 4. Prescriptions (`/consultations/{id}/prescriptions`, `/prescriptions`)
 
