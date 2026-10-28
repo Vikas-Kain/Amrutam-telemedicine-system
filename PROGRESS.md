@@ -2192,6 +2192,53 @@ git add pyproject.toml app/ tests/ docs/ deploy/ PROGRESS.md
 git commit -m "test: add repeatable load tests and performance report"
 ```
 
+---
+
+## Milestone 24: Harden container build and CI security checks
+
+**Status:** Completed and verified locally.
+
+- **GitHub Actions CI Workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):**
+  - Triggers on `push` and `pull_request` targeting `main`, plus `workflow_dispatch`.
+  - Enforces least-privilege permissions (`permissions: contents: read`) and auto-cancellation of superseded concurrent runs.
+  - Configured 4 automated verification jobs with zero suppressed failures:
+    1. **`code-quality`:** Sets up Python 3.12 and runs `ruff format --check .` and `ruff check .`.
+    2. **`tests-and-migrations`:** Spawns a real PostgreSQL 16 service container (`postgres:16-alpine`), applies Alembic schema migrations (`alembic upgrade head`), and executes full test suite (`pytest -v`) using isolated test credentials (`APP_ENV=test`, `ci-insecure-test-*` secrets).
+    3. **`security-scans`:** Audits dependencies for known CVEs using `pip-audit`, verifies no `.env` or cryptographic key files are tracked in Git, and runs TruffleHog OSS secret scanning.
+    4. **`container-build`:** Builds production image from `Dockerfile`, verifies runtime execution as unprivileged user (UID 10001 `appuser`), verifies that `.env` files are not baked into the image, and verifies health check probe configuration.
+- **Container Hardening ([`Dockerfile`](Dockerfile)):**
+  - Updated runtime stage to copy `alembic` migrations and `alembic.ini` with unprivileged ownership `appuser:appgroup` (UID 10001), allowing container instances to be safely dispatched for one-off migration jobs without root privileges.
+  - Verified multi-stage build cleanly excludes compiler tooling and caches from final runtime image.
+- **Dependency Security Audit ([`pyproject.toml`](pyproject.toml)):**
+  - Added `"pip-audit>=2.7.0"` to `project.optional-dependencies.dev` enabling repeatable vulnerability scanning in local developer workflows and CI.
+  - Upgraded `pip` to resolve known advisory findings (PYSEC-2026-1795). Clean audit achieved: 0 vulnerabilities found.
+- **Automated Tests ([`tests/test_ci_config.py`](tests/test_ci_config.py) & [`tests/test_container_config.py`](tests/test_container_config.py)):**
+  - Added 9 automated tests validating CI workflow YAML syntax, triggers, permissions, job dependencies, PostgreSQL service container setup, safe test secrets, dependency audits, container hardening checks, non-suppression of failures, and repository Git hygiene.
+  - Updated container tests verifying migration file inclusion in runtime stage.
+- **Documentation Updates ([`docs/deployment-and-recovery.md`](docs/deployment-and-recovery.md)):**
+  - Expanded Section 3 with CI/CD architecture documentation and exact local reproduction commands for all 5 CI checks (formatting, migrations/tests, pip-audit, secret check, and Docker build/inspect).
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\pip-audit.exe
+.\.venv\Scripts\pytest.exe tests/test_ci_config.py tests/test_container_config.py -v
+.\.venv\Scripts\pytest.exe -v
+```
+
+All commands passed (326 total tests passed, 0 failures, 0 errors).
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add .github/ Dockerfile pyproject.toml tests/ docs/ PROGRESS.md
+git commit -m "ci: add test pipeline container build and security scans"
+```
+
 
 
 

@@ -21,15 +21,54 @@ Local development utilizes Docker Compose to run:
 - **Explicit migrations:** Database migrations (`alembic upgrade head`) are run as an explicit one-off job or entrypoint step before traffic routing, not concurrently by multiple scaled replicas.
 
 ## 3. Continuous integration and delivery (CI/CD)
-The GitHub Actions workflow triggers on push to `main` and pull requests:
-1. **Lint and format checks:** Run `ruff check .` and `ruff format --check .`.
-2. **Type checking:** Run `mypy` on the codebase.
-3. **Unit and API tests:** Execute `pytest` test suites.
-4. **Integration tests with PostgreSQL:** Spin up a PostgreSQL service container in CI, apply Alembic migrations, and execute concurrency and transactional tests.
-5. **Security scanning:**
-   - Dependency vulnerability scanning (`pip-audit`).
-   - Secret scanning (`trufflehog` / `detect-secrets`).
-6. **Container build:** Build Docker container image and verify image metadata.
+
+The GitHub Actions CI pipeline ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) automatically validates every push and pull request targeting `main`. It enforces strict least-privilege permissions (`contents: read`), uses non-production test credentials exclusively, and fails fast if any verification fails without suppressing valid findings.
+
+### CI Pipeline Jobs
+
+1. **`code-quality` (Format and Lint Check):**
+   - Sets up Python 3.12 and installs Ruff.
+   - Executes `ruff format --check .` to ensure formatting conformity.
+   - Executes `ruff check .` to check for syntax bugs, unused imports, and style violations.
+2. **`tests-and-migrations` (Unit & Integration Tests + Migrations):**
+   - Spawns a real PostgreSQL 16 container service (`postgres:16-alpine`) with health check probes (`pg_isready`).
+   - Runs `alembic upgrade head` to validate migration scripts against real PostgreSQL.
+   - Runs `pytest -v` across the entire test suite, validating transactional guarantees, row-locking concurrency, and authorization boundaries.
+   - Injects safe, dummy test credentials (`APP_ENV=test`, `SECRET_KEY=ci-insecure-test-...`, `MFA_ENCRYPTION_KEY=...`); zero production secrets are exposed.
+3. **`security-scans` (Dependency Audit & Secret Scanning):**
+   - Executes `pip-audit` to detect known CVEs in PyPI dependencies.
+   - Runs Git repository inspection to ensure no `.env`, `.env.*`, `*.pem`, or `*.key` files are committed.
+   - Runs TruffleHog OSS secret scanning to catch accidental API token or credential leaks.
+4. **`container-build` (Docker Image Build & Hardening Verification):**
+   - Builds the production multi-stage image (`Dockerfile`).
+   - Inspects the container runtime UID to guarantee execution as unprivileged user (`appuser`, UID 10001, GID 10001).
+   - Scans the container root filesystem to verify that `.env` files are not baked into the image.
+   - Verifies the image `HEALTHCHECK` probe points to `/health/live`.
+
+### Local Equivalent Commands
+
+Developers must run these commands locally prior to opening pull requests:
+
+```powershell
+# 1. Formatting and linting
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+
+# 2. Database migrations and tests (requires running local PostgreSQL)
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\pytest.exe -v
+
+# 3. Dependency vulnerability audit
+.\.venv\Scripts\pip-audit.exe
+
+# 4. Secret & git hygiene check
+git ls-files | Select-String -Pattern "^\.env$|^\.env\..+|.*\.pem$|.*\.key$"
+
+# 5. Local Docker build and runtime verification
+docker build -t amrutam-telemedicine:local .
+docker run --rm amrutam-telemedicine:local id
+docker run --rm amrutam-telemedicine:local sh -c "find /app -name '.env*'"
+```
 
 ## 4. Production scaling outline
 - **Stateless API tier:** Horizontal scaling of FastAPI replicas behind a managed load balancer (e.g. AWS ALB or NGINX) with TLS 1.3 termination.

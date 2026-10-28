@@ -31,6 +31,10 @@ def test_dockerfile_exists_and_configured():
     assert "HEALTHCHECK" in content
     assert "/health/live" in content
 
+    # Migration support in runtime stage
+    assert "COPY --chown=appuser:appgroup alembic /app/alembic" in content
+    assert "alembic.ini" in content
+
     # Clean Uvicorn startup
     assert 'CMD ["uvicorn", "app.main:app"' in content
 

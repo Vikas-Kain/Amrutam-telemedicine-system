@@ -52,9 +52,10 @@ RUN chown -R appuser:appgroup /app
 # Copy virtual environment from builder stage
 COPY --from=builder --chown=appuser:appgroup /opt/venv /opt/venv
 
-# Copy application source code and metadata (excluding secrets via .dockerignore)
+# Copy application source code, migrations, and metadata (excluding secrets via .dockerignore)
 COPY --chown=appuser:appgroup app /app/app
-COPY --chown=appuser:appgroup pyproject.toml README.md /app/
+COPY --chown=appuser:appgroup alembic /app/alembic
+COPY --chown=appuser:appgroup alembic.ini pyproject.toml README.md /app/
 
 # Switch to unprivileged user
 USER appuser
