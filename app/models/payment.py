@@ -81,6 +81,10 @@ class Payment(Base):
             unique=True,
             postgresql_where=text("provider_reference IS NOT NULL"),
         ),
+        # Analytics indexes for fast range queries, volume, and currency filtering
+        Index("ix_payments_created_at", "created_at"),
+        Index("ix_payments_status_created_at", "status", "created_at"),
+        Index("ix_payments_currency_created_at", "currency", "created_at"),
     )
 
     consultation: Mapped["Consultation"] = relationship("Consultation", back_populates="payments")

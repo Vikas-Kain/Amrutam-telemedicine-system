@@ -98,6 +98,10 @@ class Consultation(Base):
             "status IN ('booked', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show')",
             name="chk_consultations_status",
         ),
+        # Analytics indexes for fast range queries and status aggregation
+        Index("ix_consultations_created_at", "created_at"),
+        Index("ix_consultations_status_created_at", "status", "created_at"),
+        Index("ix_consultations_doctor_created_at", "doctor_id", "created_at"),
     )
 
     patient: Mapped["User"] = relationship("User", foreign_keys=[patient_id])

@@ -183,6 +183,48 @@ Administrative endpoint providing query and inspection access to the tamper-evid
 - **Sanitization & redaction**: Audit logs strictly exclude passwords, tokens, MFA secrets, credit card data (PAN/CVV), prescription clinical contents (items, dosage, notes, diagnosis), and raw request bodies.
 - **Transactional atomicity policy**: Audit records emitted during business operations (bookings, cancellations, availability changes, consultations, prescriptions, payments) are enlisted in the active database transaction without an independent commit. If the operation succeeds, the audit trail commits atomically; if the operation fails or rolls back, the audit record is rolled back, preventing misleading 'ghost' entries.
 
+### Admin Analytics (`/api/v1/admin/analytics/*`)
+Administrative endpoints providing aggregated business metrics, conversion trends, and financial outcomes.
+- **Access control**: Strictly restricted to administrators via `require_admin`. Patient or doctor callers receive `403 Forbidden`; unauthenticated callers receive `401 Unauthorized`. Calling any analytics endpoint enlists an audit event (`action="admin.analytics_read"`).
+- **Date range bounding**:
+  - `date_from`: UTC timestamp (defaults to 30 days prior to `date_to`).
+  - `date_to`: UTC timestamp (defaults to current time `now(UTC)`).
+  - Validation: `date_from <= date_to` (inversion returns `400 Bad Request` with code `INVALID_DATE_RANGE`).
+  - Window limit: `date_to - date_from <= 90 days` (excessive range returns `400 Bad Request` with code `DATE_RANGE_TOO_LARGE`).
+- **Privacy & clinical confidentiality**: Endpoints return mathematical counts, sums, ratios, and daily trends only. Never returns patient identifiers, clinical notes, appointment reasons, prescription items, PANs, or raw provider secrets.
+
+#### 1. Consultation Trends (`GET /api/v1/admin/analytics/consultations`)
+- **Query parameters**: `date_from`, `date_to`, `doctor_id` (optional UUID).
+- **Metric definitions**:
+  - `total_consultations`: Total consultation records created in the window.
+  - `status_counts`: Map of counts across all valid statuses (`booked`, `confirmed`, `in_progress`, `completed`, `cancelled`, `no_show`).
+  - `completion_rate`: Ratio of completed consultations to total consultations (`completed / total_consultations`, rounded to 4 decimals, 0.0 if total is 0).
+  - `daily_trends`: Chronological list of daily buckets (`date` YYYY-MM-DD, `total`, `by_status` breakdown).
+
+#### 2. Booking & Cancellation Rates (`GET /api/v1/admin/analytics/bookings`)
+- **Query parameters**: `date_from`, `date_to`, `doctor_id` (optional UUID).
+- **Metric definitions**:
+  - `total_bookings`: Total appointments scheduled in the window.
+  - `confirmed_bookings`, `completed_bookings`, `cancelled_bookings`, `no_show_bookings`: Count per state.
+  - `cancellation_rate`: `cancelled_bookings / total_bookings` (0.0 if total is 0).
+  - `no_show_rate`: `no_show_bookings / total_bookings` (0.0 if total is 0).
+  - `daily_trends`: Chronological list of daily buckets (`date` YYYY-MM-DD, `total_bookings`, `cancelled_bookings`, `no_show_bookings`).
+
+#### 3. Payment Outcomes (`GET /api/v1/admin/analytics/payments`)
+- **Query parameters**: `date_from`, `date_to`, `currency` (optional string, e.g. `INR`).
+- **Metric definitions**:
+  - `total_payments`: Count of all payment attempts in the window.
+  - `total_volume_minor`: Sum of `amount_minor` for succeeded transactions in integer minor units (paise).
+  - `status_counts`: Breakdown across `pending`, `succeeded`, `failed`, `refunded`, `requires_reconciliation`.
+  - `success_rate`: `succeeded_count / total_payments` (0.0 if total is 0).
+  - `failure_rate`: `failed_count / total_payments` (0.0 if total is 0).
+  - `refund_rate`: `refunded_count / total_payments` (0.0 if total is 0).
+  - `daily_trends`: Chronological list of daily buckets (`date`, `total_payments`, `succeeded_count`, `failed_count`, `succeeded_volume_minor`).
+
+#### Known Limitations
+- Aggregations are computed dynamically using indexed PostgreSQL `GROUP BY` queries over `created_at` and `status`. For massive dataset volumes (>10 million rows/month), precomputed rollup views or asynchronous data-warehouse pipelines (e.g. ClickHouse/BigQuery) would be recommended.
+
+
 
 ## 7. Health and observability (`/health`, `/metrics`)
 

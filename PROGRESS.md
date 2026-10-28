@@ -25,8 +25,8 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **15** | Prescriptions & Item Authorization | `feat: add prescription and prescription-item workflows` | **Implemented (Pending Commit)** |
 | **16** | Payment Lifecycle & Mock Provider Adapter | `feat: add payment lifecycle with mock provider adapter` | **Implemented (Pending Commit)** |
 | **17** | Audit Logging for Sensitive Operations | `feat: add security audit trail for critical actions` | **Implemented (Pending Commit)** |
-| **18** | Aggregate Admin Analytics | `feat: add aggregate admin analytics` | *Next Up* |
-| **19** | Background Jobs & Transactional Outbox | `feat: add background jobs and transactional outbox` | *Planned* |
+| **18** | Aggregate Admin Analytics | `feat: add role-protected admin analytics endpoints` | **Implemented (Pending Commit)** |
+| **19** | Background Jobs & Transactional Outbox | `feat: add background jobs and transactional outbox` | *Next Up* |
 | **20** | Rate Limiting & Resilience Policies | `feat: add rate limiting and resilience policies` | *Planned* |
 | **21** | Core API & Security Test Coverage | `test: complete core API and security test coverage` | *Planned* |
 | **22** | Logs, Metrics, Traces & Health Probes | `feat: instrument logs, metrics, traces, and health checks` | *Planned* |
@@ -1773,6 +1773,77 @@ Per `AGENTS.md`, no commit was created. Review the diff, then run:
 git add app/ tests/ docs/ PROGRESS.md
 git commit -m "feat: add security audit trail for critical actions"
 ```
+
+---
+
+## Milestone 18: Aggregate admin analytics
+
+**Status:** Implemented and verified on local PostgreSQL.
+
+- **Database Indexes & Migration (`alembic/versions/0009_analytics_indexes.py`):**
+  - Created migration `0009_analytics_indexes` adding composite and time-series indexes on `consultations`
+    (`ix_consultations_created_at`, `ix_consultations_status_created_at`, `ix_consultations_doctor_created_at`)
+    and on `payments` (`ix_payments_created_at`, `ix_payments_status_created_at`, `ix_payments_currency_created_at`).
+  - Updated `Consultation.__table_args__` and `Payment.__table_args__` in models to match Alembic definitions.
+- **Schemas (`app/schemas/analytics.py`):**
+  - Created `ConsultationAnalyticsResponse` and `ConsultationDailyTrend` containing `total_consultations`, `status_counts`,
+    `completion_rate`, and chronological daily trend buckets.
+  - Created `BookingAnalyticsResponse` and `BookingDailyTrend` containing `total_bookings`, `confirmed_bookings`,
+    `completed_bookings`, `cancelled_bookings`, `cancellation_rate`, `no_show_bookings`, `no_show_rate`, and daily trends.
+  - Created `PaymentAnalyticsResponse` and `PaymentDailyTrend` containing `total_payments`, `total_volume_minor`,
+    `currency`, `status_counts`, `success_rate`, `failure_rate`, `refund_rate`, and daily trends.
+  - Enforced strict privacy invariants: response models strictly omit patient identifiers, medical notes, clinical reasons,
+    prescription items, and raw payment references/secrets.
+- **Analytics Service (`app/services/analytics_service.py`):**
+  - `validate_date_range`: Resolves default evaluated time window (past 30 days), enforces chronological ordering
+    (`date_from <= date_to`, rejecting with `INVALID_DATE_RANGE` / HTTP 400), and caps evaluated window at 90 days
+    (`DATE_RANGE_TOO_LARGE` / HTTP 400).
+  - `get_consultation_analytics`: Efficient SQL `GROUP BY` query on `status` and `cast(created_at, Date)` over `consultations`.
+  - `get_booking_analytics`: Status aggregations, cancellation rate calculation, no-show rate calculation, and daily booking volume.
+  - `get_payment_analytics`: SQL `GROUP BY` query calculating total minor-unit volume (`func.sum`), transaction status breakdowns,
+    and outcome rates.
+- **API Endpoints (`app/api/v1/endpoints/analytics.py`):**
+  - Mounted under `/api/v1/admin/analytics`:
+    - `GET /api/v1/admin/analytics/consultations`: Scoped consultation analytics and daily trends.
+    - `GET /api/v1/admin/analytics/bookings`: Booking volume, cancellation rates, and no-show rates.
+    - `GET /api/v1/admin/analytics/payments`: Monetary volume and outcome ratios.
+  - Guarded strictly by `require_admin` dependency (non-admin callers receive HTTP 403 Forbidden).
+  - Emits an administrative audit event (`action="admin.analytics_read"`) on every analytics query execution.
+- **Automated Tests (`tests/test_analytics.py`):**
+  - Added 8 comprehensive tests:
+    - Date range bounds, defaults, inversion validation, and maximum window rejection.
+    - RBAC: Anonymous callers rejected with 401 Unauthorized across all endpoints.
+    - RBAC: Patient and Doctor roles rejected with 403 Forbidden across all endpoints.
+    - Consultation analytics unit query and privacy invariant assertion (absence of patient/clinical fields).
+    - Booking analytics unit query asserting cancellation rate and no-show rate calculations.
+    - Payment analytics unit query asserting volume calculation, success/failure ratios, and absence of payment secrets.
+    - HTTP route integration test via `TestClient` verifying 200 responses, audit logging, and 400 error codes.
+    - Live PostgreSQL integration test executing grouped queries and composite indexes against seeded doctor, slot, consultation, and payment data.
+- **Documentation Updates:**
+  - `docs/api-contract.md`: Documented Section 6 analytics endpoints, parameter limits, metric definitions, and limitations.
+  - `docs/requirements-traceability.md`: Marked Admin analytics as Implemented with evidence.
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\pytest.exe tests/test_analytics.py -v
+.\.venv\Scripts\pytest.exe -v
+```
+
+All commands passed (225 total tests).
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add alembic/ app/ tests/ docs/ PROGRESS.md
+git commit -m "feat: add role-protected admin analytics endpoints"
+```
+
 
 
 
