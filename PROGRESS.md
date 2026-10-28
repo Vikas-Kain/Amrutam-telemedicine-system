@@ -23,8 +23,9 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **13** | Booking Retrieval & Cancellation Lifecycle | `feat: add booking retrieval and cancellation lifecycle` | **Implemented (Pending Commit)** |
 | **14** | Consultation Lifecycle State Machine | `feat: enforce consultation lifecycle transitions` | **Implemented (Pending Commit)** |
 | **15** | Prescriptions & Item Authorization | `feat: add prescription and prescription-item workflows` | **Implemented (Pending Commit)** |
-| **16** | Payment Lifecycle & Mock Provider Adapter | `feat: add payment lifecycle with mock provider adapter` | *Next Up* |
-| **17** | Audit Logging for Sensitive Operations | `feat: add audit logging for sensitive operations` | *Planned* |
+| **16** | Payment Lifecycle & Mock Provider Adapter | `feat: add payment lifecycle with mock provider adapter` | **Implemented (Pending Commit)** |
+| **17** | Audit Logging for Sensitive Operations | `feat: add audit logging for sensitive operations` | *Next Up* |
+
 | **18** | Aggregate Admin Analytics | `feat: add aggregate admin analytics` | *Planned* |
 | **19** | Background Jobs & Transactional Outbox | `feat: add background jobs and transactional outbox` | *Planned* |
 | **20** | Rate Limiting & Resilience Policies | `feat: add rate limiting and resilience policies` | *Planned* |
@@ -1646,6 +1647,67 @@ Per `AGENTS.md`, no commit was created. Review the diff, then run:
 git add alembic/ app/ tests/ docs/ PROGRESS.md
 git commit -m "feat: add prescription and prescription-item workflows"
 ```
+
+---
+
+## Milestone 16: Payment lifecycle with mock provider adapter
+
+**Status:** Implemented and verified on local PostgreSQL.
+
+- Created Alembic migration `0008_payment_status_chk.py` adding check constraint `chk_payments_status`
+  on `payments(status)` for `('pending', 'succeeded', 'failed', 'refunded', 'requires_reconciliation')`.
+- Updated `app/models/payment.py` to include `chk_payments_status` in `Payment.__table_args__`.
+- Created provider adapter interface `app/services/payment_provider.py` defining `PaymentProviderAdapter` and
+  `MockPaymentProviderAdapter` with HMAC-SHA256 webhook signature verification (`verify_webhook_signature`,
+  `generate_signature`), intent simulation (`success`, `pending`, `failure`, `timeout`), and lookup reconciliation.
+- Created schemas `app/schemas/payment.py` defining `PaymentStatus`, `PaymentCreateRequest`, `PaymentResponse`,
+  and `WebhookEventPayload`.
+- Implemented `app/services/payment_service.py` providing:
+  - `initiate_consultation_payment`: Idempotent payment intent initiation using `claim_or_replay`, executing
+    provider adapter calls strictly outside database transaction locks, validating consultation eligibility
+    and doctor fee matching, emitting outbox event (`payment.<status>`), and recording audit event (`payment.initiate`).
+    Card numbers (PANs), CVVs, and raw secrets are never requested, stored, or logged.
+  - `get_payment_by_id`: Authorized status inspection (patient owner, assigned doctor, or admin); automatically
+    reconciles `requires_reconciliation` status to `succeeded` via `adapter.reconcile_payment()` and records an audit log.
+  - `process_provider_webhook`: Validates incoming HMAC-SHA256 signature against raw request bytes (`X-Webhook-Signature`),
+    enforces strict state machine transitions (`pending` → `succeeded`/`failed`, `succeeded` → `refunded`,
+    `requires_reconciliation` → `succeeded`/`failed`), idempotently handles replayed events (returning 200 with
+    `status: already_processed`), and enqueues outbox and audit events.
+- Mounted API routes:
+  - `POST /api/v1/consultations/{id}/payments`: Patient payment initiation with required `Idempotency-Key`
+  - `GET /api/v1/payments/{id}`: Payment status retrieval and automatic timeout reconciliation
+  - `POST /api/v1/payments/webhooks/{provider}`: HMAC-verified idempotent provider webhook handler
+- Added `tests/test_payments.py` with 12 comprehensive unit, HTTP route, and live PostgreSQL tests covering:
+  - Happy path intent initiation and idempotency replay returning cached response.
+  - Cross-patient authorization rejection (403) and ineligible consultation status rejection (409).
+  - Amount mismatch rejection (409) and duplicate payment rejection (409).
+  - Timeout simulation and automatic reconciliation on subsequent inspection.
+  - HMAC webhook signature verification (accepting valid signatures, rejecting invalid with 401).
+  - Webhook state machine enforcement (valid transitions, replay idempotency, rejection of illegal transitions like failed -> succeeded with 409).
+  - Live PostgreSQL integration verifying atomic payment persistence, idempotency replay, webhook refund, and database check constraint enforcement.
+- Updated `README.md` to explicitly state that payment processing is simulated using a mock provider adapter and must never be pointed at real card processing.
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\pytest.exe tests/test_payments.py -v
+.\.venv\Scripts\pytest.exe -v
+```
+
+All commands passed (209 total tests).
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add alembic/ app/ tests/ docs/ README.md PROGRESS.md
+git commit -m "feat: add payment lifecycle with mock provider adapter"
+```
+
 
 
 

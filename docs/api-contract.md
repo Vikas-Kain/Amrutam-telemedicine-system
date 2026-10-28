@@ -112,8 +112,46 @@ Creating a prescription initializes `version = 1`. Amending an existing prescrip
 | Method | Path | Access | Description |
 |---|---|---|---|
 | POST | `/api/v1/consultations/{id}/payments` | Patient (`Idempotency-Key` required) | Initiate payment intent through mock payment provider |
-| GET | `/api/v1/payments/{id}` | Payment Owner / Admin | Check payment processing status |
+| GET | `/api/v1/payments/{id}` | Patient / Assigned Doctor / Admin | Check payment status; auto-reconciles timeouts |
 | POST | `/api/v1/payments/webhooks/{provider}` | Webhook Signature Verified | Idempotently process provider callback events |
+
+### Payment Intent Initiation
+`POST /api/v1/consultations/{id}/payments` requires an authenticated patient who owns the consultation, and an `Idempotency-Key` header.
+- **Request body** (`PaymentCreateRequest`):
+  - `amount_minor` (optional integer): Expected fee in minor currency units (paise). If provided and does not match the assigned doctor's consultation fee, returns `409 Conflict`.
+  - `simulation` (optional string): Simulation mode for evaluation (`success`, `pending`, `failure`, `timeout`).
+- **Response** (`PaymentResponse`, HTTP 201 Created on fresh creation; HTTP 200 OK on replayed request):
+  - `id`: Unique payment record UUID.
+  - `consultation_id`: Associated consultation UUID.
+  - `amount_minor`: Consultation fee charged in integer minor units.
+  - `currency`: Currency code (e.g. `INR`).
+  - `status`: Lifecycle status (`succeeded`, `pending`, `failed`, `requires_reconciliation`).
+  - `provider`: Provider identifier (`mock_provider`).
+  - `provider_reference`: Simulated provider transaction ID (e.g. `mock_pi_...`).
+  - `created_at` / `updated_at`: UTC timestamps.
+- **Rules and Edge Cases**:
+  - External provider API calls occur outside database locks.
+  - Ineligible consultation states (`cancelled`, `no_show`) return `409 Conflict`.
+  - Already-paid consultations (`status = succeeded`) return `409 Conflict`.
+  - Unknown/timeout provider responses transition to `requires_reconciliation` instead of assuming failure.
+  - Card numbers (PANs), CVVs, and raw secrets are never requested, stored, or logged.
+
+### Payment Status Retrieval & Reconciliation
+`GET /api/v1/payments/{id}` returns the current `PaymentResponse`.
+- Restricted to the paying patient, assigned doctor, or administrator; unrelated callers receive `403 Forbidden`.
+- If the payment is in `requires_reconciliation` status, the service queries the adapter to reconcile the transaction with the provider, updates the database state to `succeeded`, records an audit event, and returns the resolved representation.
+
+### Provider Webhook Processing
+`POST /api/v1/payments/webhooks/{provider}` processes asynchronous provider events idempotently.
+- Requires `X-Webhook-Signature` header containing HMAC-SHA256 digest of request body. Missing or invalid signature returns `401 Unauthorized`.
+- Supports event types: `payment.succeeded`, `payment.failed`, `payment.refunded`.
+- **State transitions**:
+  - `pending` → `succeeded` or `failed`
+  - `requires_reconciliation` → `succeeded` or `failed`
+  - `succeeded` → `refunded`
+- **Idempotency**: Re-delivering a webhook for an already transitioned payment returns `200 OK` with status `"already_processed"`.
+- **Invalid transitions**: Attempting an illegal transition (e.g. `failed` → `succeeded`) returns `409 Conflict`.
+
 
 ## 6. Admin and analytics (`/admin/analytics`)
 

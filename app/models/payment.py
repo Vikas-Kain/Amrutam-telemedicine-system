@@ -71,6 +71,10 @@ class Payment(Base):
 
     __table_args__ = (
         CheckConstraint("amount_minor >= 0", name="chk_payments_amount_non_negative"),
+        CheckConstraint(
+            "status IN ('pending', 'succeeded', 'failed', 'refunded', 'requires_reconciliation')",
+            name="chk_payments_status",
+        ),
         Index(
             "uq_payments_provider_reference",
             "provider_reference",

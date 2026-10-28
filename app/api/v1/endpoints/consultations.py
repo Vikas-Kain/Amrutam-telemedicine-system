@@ -10,6 +10,7 @@ from app.api.deps import (
     get_current_user,
     require_doctor,
     require_doctor_or_admin,
+    require_patient,
     require_patient_or_admin,
 )
 from app.db.session import get_db_session
@@ -19,6 +20,7 @@ from app.schemas.consultation import (
     ConsultationResponse,
     ConsultationStatus,
 )
+from app.schemas.payment import PaymentCreateRequest, PaymentResponse
 from app.schemas.prescription import PrescriptionCreate, PrescriptionResponse
 from app.services.booking_service import cancel_booking
 from app.services.consultation_service import (
@@ -27,6 +29,7 @@ from app.services.consultation_service import (
     transition_consultation,
 )
 from app.services.idempotency_service import require_idempotency_key
+from app.services.payment_service import initiate_consultation_payment
 from app.services.prescription_service import (
     get_prescription_by_consultation,
     issue_or_amend_prescription,
@@ -350,4 +353,41 @@ async def get_consultation_prescription_endpoint(
         session=session,
         consultation_id=consultation_id,
         current_user=current_user,
+    )
+
+
+@router.post(
+    "/{consultation_id}/payments",
+    response_model=PaymentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Initiate payment intent for an appointment consultation",
+    description=(
+        "Initiates a payment intent through the simulated payment provider adapter. "
+        "Requires patient authentication and an Idempotency-Key header. External provider "
+        "calls occur outside database locks; matching completed retries return original results."
+    ),
+    responses={
+        200: {"description": "Original completed payment replayed."},
+        201: {"description": "Payment successfully initiated/completed."},
+        400: {"description": "Missing or invalid Idempotency-Key header."},
+        401: {"description": "Authentication credentials missing or invalid."},
+        403: {"description": "Caller is not the patient who booked the consultation."},
+        404: {"description": "Consultation was not found."},
+        409: {"description": "Consultation already paid or in an ineligible status."},
+    },
+)
+async def create_consultation_payment_endpoint(
+    consultation_id: uuid.UUID,
+    payload: PaymentCreateRequest,
+    current_user: Annotated[User, Depends(require_patient)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str, Depends(require_idempotency_key)],
+) -> PaymentResponse:
+    """Initiate an idempotent consultation payment."""
+    return await initiate_consultation_payment(
+        session=session,
+        consultation_id=consultation_id,
+        payload=payload,
+        current_user=current_user,
+        idempotency_key=idempotency_key,
     )

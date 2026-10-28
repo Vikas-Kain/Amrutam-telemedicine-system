@@ -133,5 +133,9 @@ ruff format --check .
 pytest
 ```
 
+## Payment processing simulation
+Payment integration in this system is intentionally simulated via `MockPaymentProviderAdapter`. It does not contact external card processing networks, does not store PANs or CVVs, and performs no real monetary charges. The mock adapter exists strictly to satisfy assignment requirements for idempotent transaction records, state machine verification, timeout reconciliation, and HMAC webhook ingestion. The mock adapter must never be pointed at real card processing.
+
 ## Security notice
 Do not use real patient health information (PHI) or real payment credentials. This repository is an assignment implementation and must not be represented as a certified or production-operated healthcare system without formal clinical, legal, operational, and security compliance assessments.
+

@@ -93,10 +93,11 @@ This document specifies the logical data model for the Amrutam Telemedicine Back
 - `consultation_id`: UUID, non-null, foreign key to `consultations.id`.
 - `amount_minor`: INTEGER, non-null, check `amount_minor >= 0`.
 - `currency`: VARCHAR(3), non-null, default `'INR'`.
-- `status`: VARCHAR(32), non-null, default `'pending'` (`pending`, `succeeded`, `failed`, `refunded`).
+- `status`: VARCHAR(32), non-null, default `'pending'` (`pending`, `succeeded`, `failed`, `refunded`, `requires_reconciliation`). Check constraint: `chk_payments_status`.
 - `provider`: VARCHAR(64), non-null (e.g. `'mock_provider'`).
 - `provider_reference`: VARCHAR(255), nullable, unique where non-null.
 - `created_at`, `updated_at`: TIMESTAMPTZ, non-null.
+
 
 ### audit_logs
 - `id`: UUID primary key.
