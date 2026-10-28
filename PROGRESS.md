@@ -17,7 +17,7 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **07** | User Registration & Argon2 Password Hashing | `feat: add user registration and secure password hashing` | **Completed & Committed** |
 | **08** | JWT Authentication & Role-Based Authorization | `feat: add JWT authentication and role-based authorization` | **Implemented (Pending Commit)** |
 | **09** | Doctor Profiles & Searchable Listing | `feat: add doctor profiles and search filters` | **Completed & Committed** |
-| **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | **Implemented (Pending Commit)** |
+| **10** | Doctor Availability Slot Management | `feat: add doctor availability management` | **Completed & Committed** |
 | **11** | Idempotency Storage & Request Handling | `feat: add idempotency key persistence for write requests` | *Next Up* |
 | **12** | Atomic, Concurrency-Safe Booking Workflow | `feat: implement atomic idempotent appointment booking` | *Planned* |
 | **13** | Booking Retrieval & Cancellation Lifecycle | `feat: add booking retrieval and cancellation lifecycle` | *Planned* |
@@ -1282,14 +1282,55 @@ Start the application server:
    **Expected Response:** HTTP 400 Bad Request with `code: "PAST_SLOT_NOT_ALLOWED"`.
 
 5. **Verify Public Slot Discovery:**
+   Query the public availability endpoint using Dr. Sharma's doctor ID (`6e532162-74d6-4985-ba7e-02d8bde0624c`):
    ```powershell
-   curl.exe -i "http://127.0.0.1:8000/api/v1/doctors/{doctor_id}/slots"
+   curl.exe -i "http://127.0.0.1:8000/api/v1/doctors/6e532162-74d6-4985-ba7e-02d8bde0624c/slots"
    ```
-   **Expected Response:** HTTP 200 OK with `total` and `items` array.
+   **Expected Response:** HTTP 200 OK with total count and the list of active slots.
 
 ---
 
-### Step 5: Suggested Git Commit Command
+### Step 5: Live Test Execution Evidence
+
+During manual interactive verification in PowerShell against the live server (`uvicorn app.main:app`), the following evidence was captured:
+
+1. **Authentication & Token Retrieval:**
+   ```powershell
+   $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/auth/login" -ContentType "application/json" -Body (@{ email = "dr.sharma@amrutam.co.in"; password = "StrongPassword123!" } | ConvertTo-Json)
+   $TOKEN = $login.access_token
+   ```
+
+2. **Slot Creation (HTTP 201 Created via `Invoke-RestMethod`):**
+   ```text
+   id         : c18d9b89-6932-4fe0-bf90-e70f6dc66f9f
+   doctor_id  : 6e532162-74d6-4985-ba7e-02d8bde0624c
+   start_at   : 2026-11-01T14:00:00Z
+   end_at     : 2026-11-01T14:30:00Z
+   status     : available
+   created_at : 2026-10-28T08:03:18.039759Z
+   updated_at : 2026-10-28T08:03:18.039759Z
+   ```
+
+3. **Slot Creation (HTTP 201 Created via `curl.exe`):**
+   ```json
+   [{"id":"8c5235f4-38d3-405f-b1e9-1c651dc8cae5","doctor_id":"6e532162-74d6-4985-ba7e-02d8bde0624c","start_at":"2026-11-01T15:15:00Z","end_at":"2026-11-01T15:45:00Z","status":"available","created_at":"2026-10-28T08:03:56.683831Z","updated_at":"2026-10-28T08:03:56.683831Z"}]
+   ```
+
+4. **Rejection of Overlapping Slot (HTTP 409 Conflict):**
+   ```json
+   HTTP/1.1 409 Conflict
+   {"error":{"code":"SLOT_OVERLAP","message":"Slot interval overlaps with an existing slot for this doctor.","request_id":"req_ebf8c1e9ce6a47e78650c02285b8350c"}}
+   ```
+
+5. **Public Slot Discovery (HTTP 200 OK):**
+   ```json
+   HTTP/1.1 200 OK
+   {"items":[{"id":"86520041-3eb3-4d05-b11f-d2768f037747",...},{"id":"9a97d458-dcf6-4b04-bb65-cdd9ef5ebb0a",...},{"id":"b955ea53-cb31-4b51-a39b-bb50002caa00",...},{"id":"c18d9b89-6932-4fe0-bf90-e70f6dc66f9f",...},{"id":"8c5235f4-38d3-405f-b1e9-1c651dc8cae5",...}],"total":5}
+   ```
+
+---
+
+### Step 6: Suggested Git Commit Command
 Per `AGENTS.md`, commits are not made automatically by the agent. Review the diff and execute:
 ```bash
 git add alembic/ app/ tests/ docs/ PROGRESS.md
