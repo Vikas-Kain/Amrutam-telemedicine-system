@@ -24,9 +24,8 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **14** | Consultation Lifecycle State Machine | `feat: enforce consultation lifecycle transitions` | **Implemented (Pending Commit)** |
 | **15** | Prescriptions & Item Authorization | `feat: add prescription and prescription-item workflows` | **Implemented (Pending Commit)** |
 | **16** | Payment Lifecycle & Mock Provider Adapter | `feat: add payment lifecycle with mock provider adapter` | **Implemented (Pending Commit)** |
-| **17** | Audit Logging for Sensitive Operations | `feat: add audit logging for sensitive operations` | *Next Up* |
-
-| **18** | Aggregate Admin Analytics | `feat: add aggregate admin analytics` | *Planned* |
+| **17** | Audit Logging for Sensitive Operations | `feat: add security audit trail for critical actions` | **Implemented (Pending Commit)** |
+| **18** | Aggregate Admin Analytics | `feat: add aggregate admin analytics` | *Next Up* |
 | **19** | Background Jobs & Transactional Outbox | `feat: add background jobs and transactional outbox` | *Planned* |
 | **20** | Rate Limiting & Resilience Policies | `feat: add rate limiting and resilience policies` | *Planned* |
 | **21** | Core API & Security Test Coverage | `test: complete core API and security test coverage` | *Planned* |
@@ -1707,6 +1706,74 @@ Per `AGENTS.md`, no commit was created. Review the diff, then run:
 git add alembic/ app/ tests/ docs/ README.md PROGRESS.md
 git commit -m "feat: add payment lifecycle with mock provider adapter"
 ```
+
+---
+
+## Milestone 17: Audit logging for sensitive operations
+
+**Status:** Implemented and verified on local PostgreSQL.
+
+- **Schemas (`app/schemas/audit.py`):**
+  - Created `AuditLogResponse` and `AuditLogListResponse` supporting camel/snake-case field serialization,
+    aliasing `metadata_` to `metadata`, with pagination envelope (`items`, `page`, `page_size`, `total`).
+- **Audit Service (`app/services/audit_service.py`):**
+  - Implemented `sanitize_audit_metadata`: Enforces strict allowlisting and redaction rules. Whitelisted operational
+    keys (`slot_count`, `item_count`, `previous_version`, `status`, `previous_status`, `amount_minor`, `currency`,
+    `provider`, `provider_reference`, `cancellation_reason`, `reconciled`, etc.) are retained; all sensitive substrings
+    (`password`, `token`, `secret`, `key`, `authorization`, `credit`, `pan`, `cvv`, `prescription`, `medication`,
+    `dosage`, `instructions`, `diagnosis`, `items`, `notes`) are stripped and purged. Raw request bodies are never stored.
+  - Implemented `record_audit_event`: Automatically retrieves `correlation_id` / `request_id` from async context variables
+    (`correlation_id_ctx_var`, `request_id_ctx_var`) when omitted by the caller. Enforces the **Deliberate Failure Policy**:
+    adds the audit record directly to the calling business session without an independent commit, guaranteeing transactional
+    atomicity (if the business write succeeds, the audit trail is saved; if it rolls back, the audit entry is rolled back,
+    preventing ghost entries).
+  - Implemented `list_audit_logs`: Restricts access to users with `admin` role, returning paginated audit events with
+    filtering by `action`, `resource_type`, `resource_id`, `actor_user_id`, `date_from`, `date_to`, ordered deterministically
+    by `created_at DESC, id DESC`.
+- **Administrative API Endpoint (`app/api/v1/endpoints/admin.py`):**
+  - Implemented `GET /api/v1/admin/audit-logs` guarded by `require_admin` dependency.
+  - Automatically emits an administrative audit log (`action="admin.audit_read"`) upon successful query execution.
+  - Mounted `admin.router` under `/api/v1/admin` in `app/api/v1/router.py`.
+- **Instrumentation of Sensitive Operations:**
+  - `app/services/booking_service.py`: Added audit logging for `booking.create` and `booking.cancel`.
+  - `app/services/availability_service.py`: Added audit logging for `availability.create`, `availability.update`, and `availability.delete`.
+  - Prior milestones already audited `consultation.{status}` (Milestone 14), `prescription.create` & `prescription.amend` (Milestone 15), and `payment.initiate` & `payment.reconciled` (Milestone 16).
+- **Automated Tests (`tests/test_audit.py`):**
+  - Added 8 comprehensive tests covering:
+    - Metadata sanitization (purging passwords, tokens, MFA secrets, card numbers, prescription items, clinical notes).
+    - Context variable extraction of correlation ID and request ID.
+    - Booking and cancellation audit emission.
+    - Doctor availability slot mutation audit emission.
+    - Administrative RBAC enforcement (denying non-admin users with 403, allowing admin).
+    - Query filtering on audit logs (action, resource type, resource ID, date range).
+    - Full HTTP route flow through `GET /api/v1/admin/audit-logs` recording `admin.audit_read`.
+    - Live PostgreSQL transactional atomicity test verifying that audit logs commit on transaction success and cleanly roll back when an exception aborts the transaction, leaving no ghost audit entries in the database.
+- **Documentation Updates:**
+  - `docs/security-checklist.md`: Marked audit logging controls as Implemented with automated test evidence.
+  - `docs/requirements-traceability.md`: Updated "Compliance and audit trails" to Implemented.
+  - `docs/api-contract.md`: Documented `GET /api/v1/admin/audit-logs` schema, filters, RBAC, and atomicity guarantees.
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\pytest.exe tests/test_audit.py -v
+.\.venv\Scripts\pytest.exe -v
+```
+
+All commands passed (217 total tests).
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add app/ tests/ docs/ PROGRESS.md
+git commit -m "feat: add security audit trail for critical actions"
+```
+
 
 
 

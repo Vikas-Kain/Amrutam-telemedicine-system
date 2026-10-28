@@ -20,6 +20,7 @@ from app.models.doctor import AvailabilitySlot, Doctor
 from app.models.outbox import OutboxEvent
 from app.models.user import User
 from app.schemas.booking import BookingCreateRequest, BookingResponse
+from app.services.audit_service import record_audit_event
 from app.services.idempotency_service import claim_or_replay, record_success
 
 BOOKING_OPERATION = "create_booking"
@@ -173,6 +174,17 @@ async def create_booking(
                     },
                 )
             )
+            await record_audit_event(
+                session,
+                action="booking.create",
+                resource_type="consultation",
+                resource_id=consultation.id,
+                actor_user_id=patient.id,
+                metadata={
+                    "doctor_id": str(payload.doctor_id),
+                    "slot_id": str(slot.id),
+                },
+            )
             await session.flush()
     except IntegrityError as error:
         if _is_active_booking_constraint(error):
@@ -270,6 +282,19 @@ async def cancel_booking(
                     "slot_id": str(booking.slot_id),
                 },
             )
+        )
+        await record_audit_event(
+            session,
+            action="booking.cancel",
+            resource_type="consultation",
+            resource_id=booking.id,
+            actor_user_id=current_user.id,
+            metadata={
+                "doctor_id": str(booking.doctor_id),
+                "slot_id": str(booking.slot_id),
+                "status": "cancelled",
+                "actor_role": current_user.role,
+            },
         )
         await session.flush()
 

@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    admin,
     auth,
     bookings,
     consultations,
@@ -34,3 +35,6 @@ api_v1_router.include_router(prescriptions.router, prefix="/prescriptions", tags
 
 # Mount payments routes under /api/v1/payments
 api_v1_router.include_router(payments.router, prefix="/payments", tags=["payments"])
+
+# Mount admin routes under /api/v1/admin
+api_v1_router.include_router(admin.router, prefix="/admin", tags=["admin"])

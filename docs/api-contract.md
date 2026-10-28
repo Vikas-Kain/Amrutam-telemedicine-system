@@ -153,13 +153,36 @@ Creating a prescription initializes `version = 1`. Amending an existing prescrip
 - **Invalid transitions**: Attempting an illegal transition (e.g. `failed` → `succeeded`) returns `409 Conflict`.
 
 
-## 6. Admin and analytics (`/admin/analytics`)
+## 6. Admin and audit logs (`/admin`)
 
 | Method | Path | Access | Description |
 |---|---|---|---|
+| GET | `/api/v1/admin/audit-logs` | Admin | Query structured security audit events with filtering and bounded pagination |
 | GET | `/api/v1/admin/analytics/consultations` | Admin | Aggregate counts by status and time range |
 | GET | `/api/v1/admin/analytics/bookings` | Admin | Booking volume, cancellation rates, no-show rate |
 | GET | `/api/v1/admin/analytics/payments` | Admin | Aggregated payment volume and success/failure ratios |
+
+### Security Audit Trail (`GET /api/v1/admin/audit-logs`)
+Administrative endpoint providing query and inspection access to the tamper-evident security audit trail.
+- **Access control**: Restricted strictly to users with the `admin` role via `require_admin`. Non-admin callers receive `403 Forbidden`; unauthenticated callers receive `401 Unauthorized`. Accessing this endpoint records an administrative audit event (`action="admin.audit_read"`).
+- **Query parameters**:
+  - `action` (optional string): Exact match filter (e.g. `booking.create`, `booking.cancel`, `consultation.confirmed`, `prescription.create`, `payment.initiate`, `payment.reconciled`, `availability.create`).
+  - `resource_type` (optional string): Target entity type (e.g. `consultation`, `prescription`, `payment`, `availability_slot`, `audit_log`).
+  - `resource_id` (optional string): Identifier of the target resource.
+  - `actor_user_id` (optional UUID): Identifier of the actor executing the action.
+  - `date_from` (optional ISO-8601 UTC timestamp): Inclusive lower bound for event creation (`created_at >= date_from`).
+  - `date_to` (optional ISO-8601 UTC timestamp): Inclusive upper bound for event creation (`created_at <= date_to`).
+  - `page` (optional integer, default 1, min 1): Pagination page index.
+  - `page_size` (optional integer, default 20, min 1, max 100): Bounded page size.
+- **Ordering**: Deterministic reverse chronological order (`created_at DESC, id DESC`).
+- **Response** (`AuditLogListResponse`):
+  - `items`: List of `AuditLogResponse` objects (`id`, `actor_user_id`, `action`, `resource_type`, `resource_id`, `correlation_id`, `metadata`, `created_at`).
+  - `page`: Current page number.
+  - `page_size`: Current page size.
+  - `total`: Total matching record count.
+- **Sanitization & redaction**: Audit logs strictly exclude passwords, tokens, MFA secrets, credit card data (PAN/CVV), prescription clinical contents (items, dosage, notes, diagnosis), and raw request bodies.
+- **Transactional atomicity policy**: Audit records emitted during business operations (bookings, cancellations, availability changes, consultations, prescriptions, payments) are enlisted in the active database transaction without an independent commit. If the operation succeeds, the audit trail commits atomically; if the operation fails or rolls back, the audit record is rolled back, preventing misleading 'ghost' entries.
+
 
 ## 7. Health and observability (`/health`, `/metrics`)
 

@@ -12,6 +12,7 @@ from app.core.errors import BadRequestError, ConflictError, ForbiddenError, NotF
 from app.models.doctor import AvailabilitySlot, Doctor
 from app.models.user import User
 from app.schemas.availability import SlotCreateRequest, SlotUpdateRequest
+from app.services.audit_service import record_audit_event
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,18 @@ async def create_doctor_slots(
         for item in sorted_items
     ]
     session.add_all(created_slots)
+
+    await record_audit_event(
+        session,
+        action="availability.create",
+        resource_type="availability_slot",
+        resource_id=created_slots[0].id if created_slots else None,
+        actor_user_id=doctor.user_id,
+        metadata={
+            "doctor_id": str(doctor.id),
+            "slot_count": len(created_slots),
+        },
+    )
 
     try:
         await session.flush()
@@ -230,6 +243,19 @@ async def update_doctor_slot(
     if update_data.status is not None:
         slot.status = update_data.status
 
+    await record_audit_event(
+        session,
+        action="availability.update",
+        resource_type="availability_slot",
+        resource_id=slot.id,
+        actor_user_id=current_user.id,
+        metadata={
+            "doctor_id": str(slot.doctor_id),
+            "status": slot.status,
+            "actor_role": current_user.role,
+        },
+    )
+
     try:
         await session.flush()
         if session.in_transaction():
@@ -276,6 +302,18 @@ async def delete_doctor_slot(
             message="Cannot delete an availability slot that has already been booked.",
             code="SLOT_ALREADY_BOOKED",
         )
+
+    await record_audit_event(
+        session,
+        action="availability.delete",
+        resource_type="availability_slot",
+        resource_id=slot.id,
+        actor_user_id=current_user.id,
+        metadata={
+            "doctor_id": str(slot.doctor_id),
+            "actor_role": current_user.role,
+        },
+    )
 
     await session.delete(slot)
     if session.in_transaction():
