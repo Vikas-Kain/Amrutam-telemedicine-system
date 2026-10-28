@@ -599,6 +599,7 @@ def test_booking_cancellation_endpoint_requires_key_and_returns_cancelled_bookin
     not is_postgres_available(),
     reason="Live PostgreSQL instance not reachable; run via Docker Compose or in CI",
 )
+@pytest.mark.concurrency
 @pytest.mark.asyncio
 async def test_live_postgres_competing_patients_create_one_booking_and_one_outbox_event():
     """PostgreSQL locks and constraints allow only one of two competing bookings."""

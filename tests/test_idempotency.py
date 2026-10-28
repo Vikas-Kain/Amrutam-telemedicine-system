@@ -595,6 +595,7 @@ async def test_live_postgres_idempotency_actor_and_operation_scoping():
     not is_postgres_available(),
     reason="Live PostgreSQL instance not reachable; run via Docker Compose or in CI",
 )
+@pytest.mark.concurrency
 @pytest.mark.asyncio
 async def test_live_postgres_concurrent_same_key_race_handling():
     """Verify concurrent same-key requests against PostgreSQL do not crash with generic 500s.
@@ -684,6 +685,7 @@ async def test_live_postgres_concurrent_same_key_race_handling():
     not is_postgres_available(),
     reason="Live PostgreSQL instance not reachable; run via Docker Compose or in CI",
 )
+@pytest.mark.concurrency
 @pytest.mark.asyncio
 async def test_live_postgres_concurrent_reclaim_of_failed_key_is_serialized():
     """Two concurrent retries of a FAILED key: exactly one re-executes, the other replays.

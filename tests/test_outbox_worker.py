@@ -331,6 +331,7 @@ def test_outbox_payload_privacy_invariants() -> None:
 
 
 @pytest.mark.skipif(not is_postgres_available(), reason="PostgreSQL not available")
+@pytest.mark.concurrency
 @pytest.mark.asyncio
 async def test_postgres_outbox_concurrent_workers_skip_locked() -> None:
     """Live PostgreSQL test: competing worker tasks process distinct events

@@ -28,7 +28,7 @@ This document tracks the incremental implementation of the **Amrutam Telemedicin
 | **18** | Aggregate Admin Analytics | `feat: add role-protected admin analytics endpoints` | **Completed & Committed** |
 | **19** | Background Jobs & Transactional Outbox | `feat: add reliable background job processing with outbox` | **Completed & Committed** |
 | **20** | Rate Limiting & Resilience Policies | `feat: add API rate limits and bounded resilience policies` | **Completed & Ready to Commit** |
-| **21** | Core API & Security Test Coverage | `test: complete core API and security test coverage` | *Next Up* |
+| **21** | Core API & Security Test Coverage | `test: cover critical workflows and authorization boundaries` | **Completed & Ready to Commit** |
 | **22** | Logs, Metrics, Traces & Health Probes | `feat: instrument logs, metrics, traces, and health checks` | *Planned* |
 | **23** | Performance Benchmark & Scaling Scenarios | `test: add performance test scenarios and scaling evidence` | *Planned* |
 | **24** | Container Build & CI Security Hardening | `build: harden container build and CI security checks` | *Planned* |
@@ -1983,11 +1983,80 @@ All commands passed (261 total tests).
 
 ### Manual commit
 
-Per `AGENTS.md`, no commit was created. Review the diff, then run:
-
 ```powershell
 git add pyproject.toml .env.example app/ tests/ docs/ PROGRESS.md
 git commit -m "feat: add API rate limits and bounded resilience policies"
+```
+
+---
+
+## Milestone 21: Complete core API and security test coverage
+
+**Status:** Completed and verified locally.
+
+- **Pytest Configuration & Markers (`pyproject.toml`):**
+  - Registered `security` marker for Layer 4 authorization, IDOR, token lifecycle, and data protection boundary tests.
+  - Registered `concurrency` marker for Layer 5 multi-session race condition and row-locking tests against live PostgreSQL.
+- **Layer 4 Security & IDOR Authorization Tests (`tests/test_security.py`):**
+  - Added 34 comprehensive tests validating authorization boundaries and data confidentiality:
+    - **IDOR Protection:**
+      - Patient A cannot view Patient B's consultation details (HTTP 403 `CONSULTATION_ACCESS_FORBIDDEN`).
+      - Patient A cannot cancel Patient B's booking (HTTP 403 `BOOKING_ACCESS_FORBIDDEN`).
+      - Unassigned Doctor cannot view or transition Doctor B's consultation (HTTP 403 `CONSULTATION_NOT_ASSIGNED_DOCTOR`).
+      - Patient A cannot view Patient B's prescription (HTTP 403 `PRESCRIPTION_ACCESS_FORBIDDEN`).
+      - Unassigned Doctor cannot issue or amend prescriptions for another doctor's consultation (HTTP 403 `PRESCRIPTION_NOT_ASSIGNED_DOCTOR`).
+      - Patient A cannot view or pay for Patient B's consultation (HTTP 403 `PAYMENT_FORBIDDEN`).
+    - **Privilege Separation & RBAC:**
+      - Patient cannot create, update, or delete doctor availability slots (HTTP 403 `INSUFFICIENT_PERMISSIONS`).
+      - Patient cannot issue or amend prescriptions (HTTP 403 `INSUFFICIENT_PERMISSIONS`).
+      - Doctor cannot create patient booking reservations (HTTP 403 `INSUFFICIENT_PERMISSIONS`).
+      - Non-admin (Patient and Doctor) cannot access audit logs (`/api/v1/admin/audit-logs`) or analytics (`/api/v1/admin/analytics/consultations`) (HTTP 403 `INSUFFICIENT_PERMISSIONS`).
+    - **Token Lifecycle & Tampering:**
+      - Unauthenticated requests rejected across all protected endpoints (HTTP 401 `AUTHENTICATION_REQUIRED`).
+      - Malformed authorization headers (`Basic`, opaque tokens, whitespace) rejected (HTTP 401).
+      - Tampered JWT signature strictly rejected (HTTP 401 `INVALID_TOKEN`).
+      - Expired access tokens rejected (HTTP 401 `TOKEN_EXPIRED`).
+      - Algorithm `'none'` token injection rejected (HTTP 401 `INVALID_TOKEN`).
+      - Tokens signed with untrusted secret keys rejected (HTTP 401 `INVALID_TOKEN`).
+      - Inactive user accounts blocked even with signed tokens (HTTP 403 `ACCOUNT_INACTIVE`).
+    - **Secrets & PHI Redaction:**
+      - Verified `password_hash`, `mfa_secret`, and `mfa_secret_encrypted` are absent from `/auth/me` and `/auth/login` responses.
+      - Verified `sanitize_audit_metadata` strips passwords, bearer tokens, MFA secrets, card numbers, CVVs, and clinical notes before persistence.
+    - **Payment Webhook HMAC Security:**
+      - Missing `X-Webhook-Signature` header rejected (HTTP 401 `INVALID_WEBHOOK_SIGNATURE`).
+      - Invalid/tampered signature header rejected (HTTP 401 `INVALID_WEBHOOK_SIGNATURE`).
+      - Valid HMAC SHA256 signature accepted and transitions payment (HTTP 200).
+- **Layer 5 Concurrency & Race Condition Suite (`tests/test_concurrency.py`):**
+  - Added dedicated multi-session concurrency tests running against live PostgreSQL:
+    - **High-Contention Slot Booking:** 5 simultaneous asynchronous tasks competing for the exact same availability slot with independent database sessions. Verified exactly 1 booking succeeds (`201 Created`), while the other 4 fail with `409 Conflict`. Database verified: exactly 1 consultation row created, slot marked `booked`, exactly 1 `booking.created` outbox event emitted.
+    - **Cancellation vs Booking Race:** Verified concurrent cancellation and competing rebooking attempt maintains PostgreSQL consistency without double-booking or corrupt state.
+    - **State Transition Serialization:** 2 competing tasks attempting to transition the same consultation simultaneously. Row-level locks (`SELECT ... FOR UPDATE`) ensure exactly 1 succeeds, while the other fails cleanly with `ConflictError` (`INVALID_STATE_TRANSITION`).
+    - **Webhook Race Idempotence:** 2 concurrent webhooks for the same payment event ID. Exactly 1 transitions status to `succeeded`; the second returns `already_processed` idempotently.
+- **Readiness Probe Coverage (`tests/test_health.py`):**
+  - Added tests for `/health/ready` and `/api/v1/health/ready` verifying HTTP 200 when database connectivity is healthy and HTTP 503 `SERVICE_UNAVAILABLE` when database connection fails.
+- **Documentation Updates (`docs/testing-strategy.md`):**
+  - Added a detailed Acceptance Test Matrix mapping all 12 core acceptance requirements to their test layers, test files, verified scenarios, and pytest execution commands.
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\pytest.exe -m security -v
+.\.venv\Scripts\pytest.exe -m concurrency -v
+.\.venv\Scripts\pytest.exe -v
+```
+
+All commands passed (302 total tests passed, 0 failures, 0 errors).
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add pyproject.toml app/ tests/ docs/ PROGRESS.md
+git commit -m "test: cover critical workflows and authorization boundaries"
 ```
 
 
