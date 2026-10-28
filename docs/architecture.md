@@ -202,3 +202,50 @@ Document encrypted backups, backup frequency, retention, point-in-time recovery 
 ## 12. Validation and acceptance
 
 The repository should contain API schemas, migrations, tests, an automated CI workflow, Docker setup, the security checklist and threat model, observability configuration/instructions, a README and a five-minute demo. Demonstrate at least one valid booking, a duplicate idempotent retry, a concurrent booking conflict, an unauthorized resource access rejection, lifecycle transitions, and metrics/log visibility. Report exactly what is implemented, what is mocked, measured test results, and known limitations.
+
+## 13. Performance, scaling, and partitioning rationale
+
+This section details the performance architecture, distinguishing currently implemented optimizations from future production scaling strategies.
+
+### 13.1 Implemented Optimizations
+
+The current monolithic implementation applies database-level and application-level tuning to ensure predictable performance under concurrent load:
+
+1. **Targeted Database Indexes & Constraints:**
+   - `ix_availability_slots_doctor_start_status (doctor_id, start_at, status)`: Covers the primary slot discovery query, satisfying equality on doctor/status and range filtering on start time in a single index lookup.
+   - `uq_consultations_active_slot`: A partial unique index on `consultations(slot_id) WHERE status NOT IN ('cancelled')` prevents double-booking at the relational engine level without requiring table-wide lock escalation.
+   - `ix_doctors_specialization` & `ix_doctors_user_id`: Accelerates directory search filtering and relational joins without sequential scans.
+   - `ix_idempotency_keys_client_key`: Composite index on `(client_id, key)` providing fast O(1) lookups for deduplicating concurrent/retried mutation requests.
+   - `ix_outbox_events_status_attempts_created`: Enables the background outbox publisher to efficiently fetch pending messages in chronological order.
+
+2. **Connection Pooling & Concurrency Controls:**
+   - Asynchronous SQLAlchemy / asyncpg connection pool with bounded limits (`pool_size=10`, `max_overflow=20`, `pool_timeout=30.0s`), preventing database socket starvation under traffic spikes.
+   - Fine-grained row locking (`SELECT ... FOR UPDATE`) on individual `availability_slots` rows ensures atomic reservation without contention spreading to unaffected slots or doctors.
+
+3. **Memory Safeguards & Bounded Streaming:**
+   - `RequestBodyLimitMiddleware` rejects oversized payloads (> 1 MB by default) with HTTP 413, streaming chunked payloads up to the limit without buffering unbounded bodies into RAM.
+   - Strict pagination bounds (`page >= 1`, `1 <= page_size <= 100`) across all list endpoints prevent accidental full-table memory heap dumps.
+
+4. **Low-Cardinality Observability:**
+   - Prometheus metrics use parameterized route templates (e.g. `/api/v1/doctors/{id}/slots`) and coarse status codes rather than raw request URLs, preventing high-cardinality metric explosion.
+
+### 13.2 Future Production Scaling Roadmap
+
+For higher traffic scale exceeding single-node vertical capacity, the architecture supports the following incremental scaling paths without breaking the modular domain model:
+
+1. **Read-Write Splitting (Read Replicas):**
+   - The workload mix is predominantly read-heavy (70–80% search and slot browsing vs 10–20% booking/payment writes).
+   - In production, configure read-only database connections pointing to PostgreSQL streaming read replicas for doctor directory queries and slot lookups. Primary PostgreSQL retains exclusive responsibility for write transactions, row locks, and the transactional outbox table.
+
+2. **Horizontal Table Partitioning:**
+   - **`consultations` Table:** High-growth clinical appointment records can be horizontally range-partitioned by `created_at` (e.g. monthly or quarterly partitions using PostgreSQL native declarative partitioning or `pg_partman`). Active OLTP queries target current partitions, while historical records reside in older partitions, keeping active B-tree index working sets entirely in RAM.
+   - **`audit_logs` Table:** Immutable append-only audit logs can be partitioned by month. Older partitions can be detached and archived to low-cost cold storage (e.g., S3 / Cloud Storage Glacier tiers) to meet regulatory retention requirements without inflating transactional storage costs.
+   - **`outbox_events` Table:** As message volume grows, implement scheduled vacuuming or range partitioning by creation date, or prune processed events older than 7–14 days.
+
+3. **Distributed Caching (Redis Cache-Aside):**
+   - Doctor profiles, specializations, and verified credentials change infrequently and are prime candidates for Redis cache-aside with short TTLs (e.g. 5–15 minutes) and event-driven invalidation.
+   - *Design Boundary:* Availability slots and active booking transactions must continue to read directly from PostgreSQL with row-level locks; slot availability should never rely on cached data as the source of truth to avoid race conditions.
+
+4. **Stateless Horizontal Replica Scaling:**
+   - The FastAPI backend application is stateless. Additional worker processes or container instances can be horizontally scaled behind an Application Load Balancer / Kubernetes Ingress Controller with Horizontal Pod Autoscaler (HPA) policies based on CPU and request latency.
+   - Distributed rate limiting via `RedisRateLimiter` ensures client quotas remain uniformly enforced across all distributed API replicas.
