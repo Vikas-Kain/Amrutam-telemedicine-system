@@ -167,3 +167,108 @@ class RequestBodyLimitMiddleware(BaseHTTPMiddleware):
 
         request._receive = receive
         return await call_next(request)
+
+
+class PrometheusMetricsMiddleware(BaseHTTPMiddleware):
+    """Middleware recording HTTP request counts, durations, and active in-flight requests.
+
+    Enforces strict low-cardinality route template labels to prevent metrics cardinality explosion.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        settings = get_settings()
+        if not settings.metrics_enabled:
+            return await call_next(request)
+
+        from app.core.metrics import (
+            http_request_duration_seconds,
+            http_requests_in_flight,
+            http_requests_total,
+            normalize_route_template,
+        )
+
+        http_requests_in_flight.inc()
+        start_time = time.perf_counter()
+        try:
+            response = await call_next(request)
+            duration = time.perf_counter() - start_time
+
+            route = request.scope.get("route")
+            route_template = route.path if route and hasattr(route, "path") else None
+            normalized_route = normalize_route_template(request.url.path, route_template)
+
+            http_requests_total.inc(
+                method=request.method,
+                route=normalized_route,
+                status_code=str(response.status_code),
+            )
+            http_request_duration_seconds.observe(
+                duration,
+                method=request.method,
+                route=normalized_route,
+            )
+            return response
+        finally:
+            http_requests_in_flight.dec()
+
+
+class TracingMiddleware(BaseHTTPMiddleware):
+    """Middleware extracting W3C Trace Context and establishing OpenTelemetry server spans.
+
+    Sanitizes span attributes, injects traceparent headers, and correlates traces.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        settings = get_settings()
+        if not settings.tracing_enabled:
+            return await call_next(request)
+
+        from opentelemetry.trace import SpanKind, StatusCode
+
+        from app.core.metrics import normalize_route_template
+        from app.core.tracing import (
+            extract_trace_context,
+            get_tracer,
+            sanitize_span_attributes,
+        )
+
+        parent_ctx = extract_trace_context(request.headers)
+        tracer = get_tracer()
+
+        route = request.scope.get("route")
+        route_template = route.path if route and hasattr(route, "path") else None
+        normalized_route = normalize_route_template(request.url.path, route_template)
+
+        span_name = f"{request.method} {normalized_route}"
+        raw_attrs = {
+            "http.method": request.method,
+            "http.route": normalized_route,
+            "http.target": request.url.path,
+            "service.name": settings.app_name,
+        }
+        clean_attrs = sanitize_span_attributes(raw_attrs)
+
+        with tracer.start_as_current_span(
+            span_name,
+            context=parent_ctx,
+            kind=SpanKind.SERVER,
+            attributes=clean_attrs,
+        ) as span:
+            try:
+                response = await call_next(request)
+                span.set_attribute("http.status_code", response.status_code)
+                if response.status_code >= 500:
+                    span.set_status(StatusCode.ERROR, f"HTTP {response.status_code}")
+
+                # Propagate W3C traceparent on response
+                span_ctx = span.get_span_context()
+                if span_ctx and span_ctx.is_valid:
+                    trace_id_hex = format(span_ctx.trace_id, "032x")
+                    span_id_hex = format(span_ctx.span_id, "016x")
+                    response.headers["traceparent"] = f"00-{trace_id_hex}-{span_id_hex}-01"
+
+                return response
+            except Exception as exc:
+                span.set_status(StatusCode.ERROR, str(exc))
+                span.record_exception(exc)
+                raise

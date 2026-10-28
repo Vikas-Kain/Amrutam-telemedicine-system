@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError
+from app.core.metrics import record_booking_metric
 from app.models.consultation import Consultation
 from app.models.doctor import AvailabilitySlot, Doctor
 from app.models.outbox import OutboxEvent
@@ -117,6 +118,7 @@ async def create_booking(
     )
 
     if idempotency.is_replayed:
+        record_booking_metric(outcome="success")
         return await _replay_booking_result(idempotency)
 
     # The idempotency claim is deliberately in the same transaction as the slot reservation.
@@ -125,13 +127,16 @@ async def create_booking(
         select(AvailabilitySlot).where(AvailabilitySlot.id == payload.slot_id).with_for_update()
     )
     if slot is None:
+        record_booking_metric(outcome="error")
         raise NotFoundError(message="Availability slot not found.", code="SLOT_NOT_FOUND")
     if slot.doctor_id != payload.doctor_id:
+        record_booking_metric(outcome="conflict")
         raise ConflictError(
             message="The availability slot does not belong to the requested doctor.",
             code="SLOT_DOCTOR_MISMATCH",
         )
     if slot.status != "available" or slot.start_at <= datetime.now(UTC):
+        record_booking_metric(outcome="conflict")
         raise ConflictError(
             message="The availability slot is no longer bookable.",
             code="SLOT_NOT_AVAILABLE",
@@ -188,12 +193,15 @@ async def create_booking(
             await session.flush()
     except IntegrityError as error:
         if _is_active_booking_constraint(error):
+            record_booking_metric(outcome="conflict")
             raise ConflictError(
                 message="The availability slot has already been booked.",
                 code="SLOT_NOT_AVAILABLE",
             ) from error
+        record_booking_metric(outcome="error")
         raise
 
+    record_booking_metric(outcome="success")
     return BookingOperationResult(booking=response, is_replayed=False)
 
 

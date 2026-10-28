@@ -92,7 +92,18 @@ async def execute_http_request_with_retry(
     Never retries 4xx client errors or validation faults.
     Sanitizes logs so sensitive credentials and tokens are never leaked.
     """
-    last_error: Exception | None = None
+    # Inject W3C Trace Context headers for distributed tracing propagation
+    req_headers = kwargs.get("headers")
+    if req_headers is None:
+        req_headers = {}
+        kwargs["headers"] = req_headers
+    if isinstance(req_headers, dict):
+        try:
+            from app.core.tracing import inject_trace_context
+
+            inject_trace_context(req_headers)
+        except Exception:
+            pass
 
     for attempt in range(1, max_retries + 1):
         try:

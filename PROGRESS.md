@@ -2059,6 +2059,75 @@ git add pyproject.toml app/ tests/ docs/ PROGRESS.md
 git commit -m "test: cover critical workflows and authorization boundaries"
 ```
 
+---
+
+## Milestone 22: Observability: metrics, logs, tracing and health checks
+
+**Status:** Completed and verified locally.
+
+- **Dependencies (`pyproject.toml`):**
+  - Added `"opentelemetry-api>=1.20.0,<2.0.0"` for standard W3C Trace Context propagation.
+- **Configurable Settings (`app/core/config.py` & `.env.example`):**
+  - Added `metrics_enabled` (boolean, default: `True`).
+  - Added `metrics_auth_token` (optional string for Bearer / X-Metrics-Key token protection).
+  - Added `tracing_enabled` (boolean, default: `True`).
+- **Prometheus Metrics Collector & Registry (`app/core/metrics.py`):**
+  - Pure Python thread-safe `Counter`, `Gauge`, `Histogram` instruments supporting standard Prometheus text format (`version=0.0.4; charset=utf-8`).
+  - **Strict Low-Cardinality Rule:** Implemented `normalize_route_template` which sanitizes route paths (replacing UUIDs, hex strings, and numeric IDs with `{id}` placeholders) to prevent cardinality explosion. User IDs, emails, and clinical payloads are never used as labels.
+  - Core Metrics Inventory implemented:
+    - `http_requests_total`: Counter by `method`, `route`, and `status_code`.
+    - `http_request_duration_seconds`: Histogram with exponential buckets (0.005s to 10.0s) for p50, p95, p99 measurements.
+    - `http_requests_in_flight`: Gauge tracking active concurrent requests.
+    - `db_pool_size`, `db_pool_checked_in`, `db_pool_checked_out`: Dynamically sampled gauges from active SQLAlchemy connection pool.
+    - `db_query_duration_seconds`: Histogram tracking query execution times hooked into SQLAlchemy cursor execution events by bounded operation (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `OTHER`).
+    - `booking_operations_total`: Counter by `outcome` (`success`, `conflict`, `error`) wired into `booking_service.py`.
+    - `idempotency_replays_total`: Counter by `outcome` (`replayed`, `payload_mismatch`) wired into `idempotency_service.py`.
+    - `outbox_events_lag_seconds`: Gauge tracking the age of the oldest unprocessed outbox event in seconds wired into `outbox/worker.py`.
+    - `worker_jobs_total`: Counter by `job_type` and `status` (`processed`, `retried`, `dead_letter`) wired into `outbox/worker.py`.
+    - `payment_transactions_total`: Counter by `provider` and `status` (`succeeded`, `failed`, etc.) wired into `payment_service.py`.
+- **OpenTelemetry Distributed Tracing (`app/core/tracing.py`):**
+  - Implemented W3C `TraceContextTextMapPropagator` for standard `traceparent` header extraction and injection.
+  - Custom `SimpleSpan`, `SimpleTracer`, and `SimpleTracerProvider` generating valid 128-bit trace IDs and 64-bit span IDs linked to parent context.
+  - `sanitize_span_attributes`: Explicitly scrubs passwords, bearer tokens, MFA secrets, card numbers, prescriptions, and clinical diagnoses to `[REDACTED]`.
+  - Ingress HTTP span propagation in `TracingMiddleware` attaching `traceparent` to response headers.
+  - Outbound HTTP call propagation in `execute_http_request_with_retry` automatically injecting `traceparent` header.
+- **Structured JSON Logging (`app/core/logging.py`):**
+  - `StructuredJsonFormatter` automatically extracts active OpenTelemetry `trace_id` and `span_id` and attaches them to log records alongside `request_id` and `correlation_id`.
+- **Health Probes (`app/api/v1/endpoints/health.py`):**
+  - `/health/live`: Fast process liveness probe returning HTTP 200 `{"status": "ok"}`.
+  - `/health/ready`: Dependency readiness probe executing `SELECT 1` against PostgreSQL and checking Redis connectivity if configured (`rate_limit_backend == "redis"`). Returns HTTP 503 `SERVICE_UNAVAILABLE` if database is down.
+- **Metrics Exposition Endpoint (`app/api/v1/endpoints/metrics.py`):**
+  - Mounted at both `GET /metrics` and `GET /api/v1/metrics`.
+  - Supports token authentication via `verify_metrics_access` checking `Authorization: Bearer <token>` or `X-Metrics-Key: <token>` when `metrics_auth_token` is set.
+- **Grafana Starter Dashboard (`deploy/dashboards/grafana-starter.json`):**
+  - Provided 9 pre-configured panels for HTTP request rates (RPS), error ratios (4xx, 5xx), latency percentiles (p50, p95, p99), active in-flight requests, connection pool saturation, query latency spikes, booking conflict rates, outbox queue lag, and worker throughput.
+  - Documented rationale for omitting full Prometheus/Grafana container stack in `docker-compose.yml` to conserve developer system resources while maintaining complete pull compatibility.
+- **Automated Tests (`tests/test_observability.py`):**
+  - 13 new automated tests covering health probes, Prometheus metrics exposition, low-cardinality route normalization, metrics token authorization, disabled metrics 404, W3C traceparent propagation, outbound trace injection, attribute sanitization, JSON log trace correlation, and domain metric recorders.
+- **Documentation Updates (`docs/observability.md`):**
+  - Comprehensive runbook and metric catalog, scrape configuration, distributed tracing specification, health check details, and local testing instructions.
+
+### Verification run
+
+```powershell
+.\.venv\Scripts\ruff.exe format --check .
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\pytest.exe tests/test_observability.py -v
+.\.venv\Scripts\pytest.exe -v
+```
+
+All commands passed (315 total tests passed, 0 failures, 0 errors).
+
+### Manual commit
+
+Per `AGENTS.md`, no commit was created. Review the diff, then run:
+
+```powershell
+git add pyproject.toml .env.example app/ tests/ docs/ deploy/ PROGRESS.md
+git commit -m "feat: add observability metrics logs and tracing"
+```
+
 
 
 

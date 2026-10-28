@@ -50,6 +50,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.errors import BadRequestError, ConflictError
+from app.core.metrics import record_idempotency_metric
 from app.models.idempotency import IdempotencyKey
 from app.schemas.idempotency import IdempotencyResult, IdempotencyStatus
 
@@ -200,6 +201,7 @@ async def claim_or_replay(
 
         # Enforce payload fingerprint matching
         if existing.request_hash != request_hash:
+            record_idempotency_metric("payload_mismatch")
             raise ConflictError(
                 code="IDEMPOTENCY_PAYLOAD_MISMATCH",
                 message="Idempotency key was previously used with a different request payload.",
@@ -207,6 +209,7 @@ async def claim_or_replay(
 
         # Handle completed record: replay original response
         if existing.status == IdempotencyStatus.COMPLETED.value:
+            record_idempotency_metric("replayed")
             return IdempotencyResult(
                 is_replayed=True,
                 key=clean_key,
@@ -304,12 +307,14 @@ async def claim_or_replay(
 
         # Validate fingerprint against the winner
         if winner.request_hash != request_hash:
+            record_idempotency_metric("payload_mismatch")
             raise ConflictError(
                 code="IDEMPOTENCY_PAYLOAD_MISMATCH",
                 message="Idempotency key was previously used with a different request payload.",
             ) from err
 
         if winner.status == IdempotencyStatus.COMPLETED.value:
+            record_idempotency_metric("replayed")
             return IdempotencyResult(
                 is_replayed=True,
                 key=clean_key,

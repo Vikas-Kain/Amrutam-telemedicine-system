@@ -66,6 +66,18 @@ class StructuredJsonFormatter(logging.Formatter):
             "correlation_id": correlation_id_ctx_var.get(),
         }
 
+        # Correlate with active OpenTelemetry trace context if available
+        try:
+            from app.core.tracing import get_current_trace_and_span_ids
+
+            trace_id, span_id = get_current_trace_and_span_ids()
+            if trace_id:
+                log_entry["trace_id"] = trace_id
+            if span_id:
+                log_entry["span_id"] = span_id
+        except Exception:
+            pass
+
         # Include exception information safely
         if record.exc_info and record.exc_info[0]:
             log_entry["exception"] = {

@@ -27,11 +27,16 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", description="Server bind host")
     port: int = Field(default=8000, description="Server bind port")
 
-    # Logging
+    # Logging & Observability
     log_level: str = Field(default="INFO", description="Log level")
     log_format: Literal["console", "json"] = Field(
         default="console", description="Log output format (console for dev, json for prod/staging)"
     )
+    metrics_enabled: bool = Field(default=True, description="Enable Prometheus metrics endpoint")
+    metrics_auth_token: str | None = Field(
+        default=None, description="Secret token required for /metrics access (restricted access)"
+    )
+    tracing_enabled: bool = Field(default=True, description="Enable OpenTelemetry tracing")
 
     # Security
     secret_key: str = Field(

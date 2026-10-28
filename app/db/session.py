@@ -2,9 +2,11 @@
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncGenerator
+from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -13,6 +15,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import get_settings
+from app.core.metrics import db_query_duration_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +37,34 @@ def get_engine() -> AsyncEngine:
             pool_pre_ping=True,
             echo=settings.debug,
         )
+
+        @event.listens_for(_engine.sync_engine, "before_cursor_execute")
+        def _before_cursor_execute(
+            conn: Any, cursor: Any, statement: str, parameters: Any, context: Any, executemany: bool
+        ) -> None:
+            if context is not None:
+                context._query_start_time = time.perf_counter()
+
+        @event.listens_for(_engine.sync_engine, "after_cursor_execute")
+        def _after_cursor_execute(
+            conn: Any, cursor: Any, statement: str, parameters: Any, context: Any, executemany: bool
+        ) -> None:
+            start = getattr(context, "_query_start_time", None) if context is not None else None
+            if start is not None:
+                duration = time.perf_counter() - start
+                op = statement.strip().split()[0].upper() if statement else "QUERY"
+                if op not in (
+                    "SELECT",
+                    "INSERT",
+                    "UPDATE",
+                    "DELETE",
+                    "BEGIN",
+                    "COMMIT",
+                    "ROLLBACK",
+                ):
+                    op = "OTHER"
+                db_query_duration_seconds.observe(duration, operation=op)
+
     return _engine
 
 

@@ -16,6 +16,7 @@ from app.core.errors import (
     NotFoundError,
     UnauthorizedError,
 )
+from app.core.metrics import record_payment_metric
 from app.models.consultation import Consultation
 from app.models.doctor import Doctor
 from app.models.outbox import OutboxEvent
@@ -179,6 +180,7 @@ async def initiate_consultation_payment(
     )
     await session.flush()
 
+    record_payment_metric(provider=intent_result.provider, status=payment.status)
     return response
 
 
@@ -335,4 +337,5 @@ async def process_provider_webhook(
     )
     await session.flush()
 
+    record_payment_metric(provider=provider, status=target_status)
     return {"status": "processed", "payment_status": target_status}

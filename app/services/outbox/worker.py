@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.metrics import record_outbox_lag_metric, record_worker_metric
 from app.core.retry import RetryPolicy, calculate_backoff_delay, is_transient_error
 from app.models.outbox import OutboxEvent
 from app.services.outbox.handlers import HANDLER_REGISTRY
@@ -70,7 +71,19 @@ class OutboxWorker:
         events = list(result.scalars().all())
 
         if not events:
+            record_outbox_lag_metric(0.0)
             return 0
+
+        # Record age of the oldest unprocessed outbox event in the batch
+        oldest_event = events[0]
+        created_at = oldest_event.created_at
+        if created_at is not None:
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=UTC)
+            lag_seconds = max(0.0, (now - created_at).total_seconds())
+        else:
+            lag_seconds = 0.0
+        record_outbox_lag_metric(lag_seconds)
 
         processed_count = 0
         for event in events:
@@ -88,6 +101,7 @@ class OutboxWorker:
                 event.last_error = None
                 event.next_retry_at = None
                 processed_count += 1
+                record_worker_metric(job_type=event.event_type, status="processed")
                 continue
 
             try:
@@ -97,6 +111,7 @@ class OutboxWorker:
                 event.last_error = None
                 event.next_retry_at = None
                 processed_count += 1
+                record_worker_metric(job_type=event.event_type, status="processed")
                 logger.debug(
                     "Successfully processed outbox event %s (%s)",
                     event.id,
@@ -117,6 +132,7 @@ class OutboxWorker:
                     )
                     event.status = "failed"
                     event.next_retry_at = now_action + timedelta(seconds=delay)
+                    record_worker_metric(job_type=event.event_type, status="retried")
                     logger.warning(
                         "Transient failure processing outbox event %s (%s) on attempt %s/%s. "
                         "Backing off for %.2fs: %s",
@@ -130,6 +146,7 @@ class OutboxWorker:
                 else:
                     event.status = "dead_letter"
                     event.next_retry_at = None
+                    record_worker_metric(job_type=event.event_type, status="dead_letter")
                     logger.error(
                         "Permanent failure or retries exhausted for outbox event %s (%s) "
                         "on attempt %s/%s. Moved to dead_letter: %s",
