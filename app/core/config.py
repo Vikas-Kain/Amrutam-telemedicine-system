@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     db_pool_timeout: int = Field(
         default=30, description="Connection pool acquisition timeout (seconds)"
     )
+    auto_migrate: bool = Field(
+        default=False, description="Automatically run Alembic migrations on startup if enabled"
+    )
 
     # Redis (Optional)
     redis_url: str = Field(default="redis://localhost:6379/0", description="Redis connection URL")

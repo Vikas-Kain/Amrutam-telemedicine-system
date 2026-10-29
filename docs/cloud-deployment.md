@@ -78,11 +78,8 @@ Render provides free Web Services and free PostgreSQL instances. We have include
      1. `amrutam-db`: Free PostgreSQL database.
      2. `amrutam-telemedicine-api`: Docker web service with automatic database wiring.
 
-3. **Apply Database Migrations:**
-   - Once deployed, go to the Web Service in Render Dashboard -> click **"Shell"** (or use SSH) and run:
-     ```bash
-     alembic upgrade head
-     ```
+3. **Automatic Database Migrations:**
+   - Database migrations run **automatically on container startup** via `AUTO_MIGRATE=true` and `dockerCommand` in [`render.yaml`](../render.yaml). You do not need to open a shell or run any manual commands.
 
 4. **Access Your Live URL:**
    - Render assigns a public URL: `https://amrutam-telemedicine-api.onrender.com`.

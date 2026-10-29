@@ -22,6 +22,15 @@ from app.db.session import close_database_connections
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle application lifecycle events."""
+    settings = get_settings()
+    if settings.auto_migrate:
+        import asyncio
+
+        from alembic import command
+        from alembic.config import Config
+
+        alembic_cfg = Config("alembic.ini")
+        await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
     yield
     await close_database_connections()
 
