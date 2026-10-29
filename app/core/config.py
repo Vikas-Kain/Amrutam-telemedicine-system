@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     auto_migrate: bool = Field(
         default=False, description="Automatically run Alembic migrations on startup if enabled"
     )
+    seed_demo_data: bool = Field(
+        default=False, description="Seed initial demo accounts (Doctor, Patient, Admin) on startup"
+    )
 
     # Redis (Optional)
     redis_url: str = Field(default="redis://localhost:6379/0", description="Redis connection URL")

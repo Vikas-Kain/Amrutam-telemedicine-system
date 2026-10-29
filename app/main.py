@@ -40,6 +40,23 @@ async def lifespan(app: FastAPI):
         except Exception as err:
             logger.error("Automated database migrations failed: %s", err, exc_info=True)
             raise
+
+    if settings.seed_demo_data:
+        import logging
+
+        from app.db.session import get_session_factory
+        from app.services.seed_service import seed_demo_data
+
+        seed_logger = logging.getLogger("app.seed")
+        seed_logger.info("Executing automated demo data seeding (SEED_DEMO_DATA=true)...")
+        try:
+            session_factory = get_session_factory()
+            async with session_factory() as session:
+                await seed_demo_data(session)
+            seed_logger.info("Automated demo data seeding completed successfully.")
+        except Exception as err:
+            seed_logger.error("Automated demo data seeding failed: %s", err, exc_info=True)
+
     yield
     await close_database_connections()
 

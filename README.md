@@ -14,6 +14,30 @@ A secure, transactional, and resilient backend monolith for telemedicine consult
 
 ---
 
+## Live Public Demo & Testing Credentials
+
+The system is deployed and publicly accessible on Render:
+- **Interactive OpenAPI Documentation (Swagger UI):** [https://amrutam-telemedicine-api-rake.onrender.com/docs](https://amrutam-telemedicine-api-rake.onrender.com/docs)
+- **Health Check Probe:** [https://amrutam-telemedicine-api-rake.onrender.com/health/live](https://amrutam-telemedicine-api-rake.onrender.com/health/live)
+
+### Pre-Configured Demo Accounts
+
+The deployment automatically seeds standard test accounts (`SEED_DEMO_DATA=true`):
+
+| Role | Email | Password | Pre-Configured Capabilities |
+| :--- | :--- | :--- | :--- |
+| **Doctor** | `doctor@amrutam.com` | `Doctor123!Secure` | Verified Ayurvedic Doctor profile, pre-seeded future availability slots. Authorized for slot management (`/doctors/me/slots`), consultation progression, and prescription issuance. |
+| **Patient** | `patient@amrutam.com` | `Patient123!Secure` | Verified patient profile. Authorized for doctor discovery, slot search, appointment booking (`/bookings`), and consultation history. |
+| **Admin** | `admin@amrutam.com` | `Admin123!Secure` | Platform administrator. Authorized for tamper-evident security audit log reviews (`/admin/audit-logs`) and platform analytics. |
+
+> **How to Test in Swagger UI:**
+> 1. Execute `POST /api/v1/auth/login` with any credentials above.
+> 2. Copy the returned `access_token` string.
+> 3. Click the green **Authorize (🔓)** button at the top right of Swagger UI, paste the token into the **Value** field, and click **Authorize**.
+> 4. All role-restricted endpoints for that persona are unlocked!
+
+---
+
 ## Architecture & System Invariants
 
 1. **System of Record (PostgreSQL):** All state changes (slots, bookings, consultations, prescriptions, payments, outbox events, audit logs) reside in PostgreSQL with explicit ACID transactions.
