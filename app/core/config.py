@@ -168,6 +168,17 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         return value
 
+    @field_validator("database_url", "test_database_url")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        """Normalize cloud postgres/postgresql URLs to asyncpg dialect if needed."""
+        trimmed = value.strip()
+        if trimmed.startswith("postgres://"):
+            return trimmed.replace("postgres://", "postgresql+asyncpg://", 1)
+        if trimmed.startswith("postgresql://") and not trimmed.startswith("postgresql+asyncpg://"):
+            return trimmed.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return trimmed
+
 
 @lru_cache
 def get_settings() -> Settings:

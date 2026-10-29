@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: amrutam-telemedicine-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: PORT
+        value: "8000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: amrutam-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: MFA_ENCRYPTION_KEY
+        value: "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI="
+      - key: RATE_LIMIT_BACKEND
+        value: memory
+      - key: LOG_FORMAT
+        value: json
+      - key: LOG_LEVEL
+        value: INFO
+      - key: METRICS_ENABLED
+        value: "true"
+
+databases:
+  - name: amrutam-db
+    plan: free
+    databaseName: amrutam_telemedicine
+    user: postgres

@@ -58,3 +58,14 @@ def test_short_secret_key_raises_validation_error(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("SECRET_KEY", "short")
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_database_url_normalization_for_cloud_providers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that postgres:// and postgresql:// URLs are normalized to postgresql+asyncpg://."""
+    monkeypatch.setenv("DATABASE_URL", "postgres://user:pass@render.com/db")
+    s1 = Settings()
+    assert s1.database_url == "postgresql+asyncpg://user:pass@render.com/db"
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@railway.app/db")
+    s2 = Settings()
+    assert s2.database_url == "postgresql+asyncpg://user:pass@railway.app/db"
