@@ -3,7 +3,6 @@ services:
     name: amrutam-telemedicine-api
     runtime: docker
     dockerfilePath: ./Dockerfile
-    dockerCommand: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     plan: free
     region: oregon
     envVars:
