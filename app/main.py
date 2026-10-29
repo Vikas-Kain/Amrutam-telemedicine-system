@@ -25,12 +25,21 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     if settings.auto_migrate:
         import asyncio
+        import logging
 
         from alembic import command
         from alembic.config import Config
 
+        logger = logging.getLogger("app.migrations")
+        logger.info("Executing automated database migrations (AUTO_MIGRATE=true)...")
         alembic_cfg = Config("alembic.ini")
-        await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+        alembic_cfg.set_main_option("sqlalchemy.url", settings.database_url)
+        try:
+            await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+            logger.info("Automated database migrations completed successfully.")
+        except Exception as err:
+            logger.error("Automated database migrations failed: %s", err, exc_info=True)
+            raise
     yield
     await close_database_connections()
 

@@ -1,7 +1,6 @@
 """Alembic environment configuration wired to application settings and Base metadata."""
 
 import asyncio
-import os
 from logging.config import fileConfig
 
 import app.models  # noqa: F401
@@ -27,8 +26,18 @@ def get_database_url() -> str:
     """Retrieve database connection URL from -x arguments, environment variable, or Settings."""
     x_args = context.get_x_argument(as_dictionary=True)
     if "db_url" in x_args and x_args["db_url"]:
-        return x_args["db_url"]
-    return os.environ.get("DATABASE_URL") or get_settings().database_url
+        raw_url = x_args["db_url"]
+    elif config.get_main_option("sqlalchemy.url"):
+        raw_url = config.get_main_option("sqlalchemy.url")
+    else:
+        raw_url = get_settings().database_url
+
+    raw_url = raw_url.strip()
+    if raw_url.startswith("postgres://"):
+        return raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if raw_url.startswith("postgresql://") and not raw_url.startswith("postgresql+asyncpg://"):
+        return raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return raw_url
 
 
 def run_migrations_offline() -> None:
