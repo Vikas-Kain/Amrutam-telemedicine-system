@@ -33,4 +33,4 @@ databases:
   - name: amrutam-db
     plan: free
     databaseName: amrutam_telemedicine
-    user: postgres
+    user: amrutam_user
